@@ -228,8 +228,9 @@ this.eventCallback = eventCallback;
 #### `disconnect()`
 
 - Stop heartbeat, clear reconnect timer
-- If socket: `this.socket.destroy()`
+- If socket: **`this.socket.removeAllListeners()` then** `this.socket.destroy()`. Removing listeners first is critical -- `destroy()` emits a `close` event asynchronously. If listeners are still attached, the old socket's `close` handler will clobber shared state (`connected`, `connecting`), reject the new connection's pending command, and schedule an unwanted reconnect. This is a race condition when `disconnect()` is called from `connect()` during an IP change or from `reconnect()`.
 - `this.connected = false`
+- Reject `initPromise` if still pending (see Init Promise section -- since listeners were removed, the socket `close` handler won't fire to reject it)
 - Reject all queued commands
 
 #### `scheduleReconnect()`
@@ -245,6 +246,8 @@ scheduleReconnect() {
   this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000); // max 30s
 }
 ```
+
+**Backoff reset:** `reconnectDelay` must only be reset to 1000 in two places: (1) the socket `connect` handler on successful connection, and (2) the caller in `index.js` when the user explicitly changes the speaker IP. Do **not** reset it inside `connect()` itself -- `scheduleReconnect()` calls `connect()`, so a reset there defeats the exponential backoff entirely (the delay oscillates between 1-2s forever instead of growing to 30s).
 
 #### `reconnect()` (called on `systemDidWakeUp`)
 
@@ -379,7 +382,21 @@ resolveQueuedCommand(msg) {
       this.pending.retries++;
       const entry = this.pending;
       this.pending = null;
-      setTimeout(() => {
+      // Track the in-limbo entry and timer so disconnect() can clean up.
+      // During the retry delay, the entry is not in `pending` or `queue` --
+      // it only exists in this closure. If disconnect() fires during the
+      // delay and only clears pending + queue, this entry's Promise leaks
+      // permanently (never resolved or rejected). disconnect() must clear
+      // the timer and reject the entry.
+      this._retryEntry = entry;
+      this._retryTimer = setTimeout(() => {
+        this._retryTimer = null;
+        this._retryEntry = null;
+        if (!this.connected) {
+          entry.reject(new Error('Disconnected during retry'));
+          return;
+        }
+        entry.enqueuedAt = Date.now();
         this.queue.unshift(entry);
         this.sendNext();
       }, 200 + Math.random() * 300); // 200-500ms jitter
@@ -507,9 +524,17 @@ this.runInitSequence(playerId)
 
 // In the socket 'close'/'error' handler:
 if (this._initReject) this._initReject(new Error('Connection closed'));
+
+// In disconnect() -- required because removeAllListeners() prevents
+// the close handler from firing:
+if (this._initReject) this._initReject(new Error('Disconnected'));
+this._initResolve = null;
+this._initReject = null;
 ```
 
 This replaces the need for an EventEmitter `.once('initialized')` pattern. Callers chain on `heosClient.initPromise.then(...)`. Each `connect()` call creates a fresh promise, so rapid IP changes always give the caller the correct promise for their connection attempt.
+
+**Important:** `disconnect()` removes socket listeners before destroying the socket (see above), so the `close` handler will not fire. `disconnect()` must therefore reject `_initReject` itself, or the promise will leak permanently -- any code awaiting `initPromise` will hang forever.
 
 ### Module Exports
 
