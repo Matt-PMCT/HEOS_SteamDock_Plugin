@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "build": "ncc build src/index.js -o com.vsd.craft.heos.sdPlugin/plugin",
-    "dev": "ncc build src/index.js -o com.vsd.craft.heos.sdPlugin/plugin --watch"
+    "dev": "ncc build src/index.js -o com.vsd.craft.heos.sdPlugin/plugin --watch",
+    "package": "npm run build && node scripts/package.js"
   },
   "dependencies": {
     "ws": "^8.16.0"

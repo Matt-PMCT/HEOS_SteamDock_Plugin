@@ -29,6 +29,15 @@ A [VSDinside StreamDock](https://www.vsdinside.com/) plugin that controls Denon 
 
 ## Installation
 
+### Download (easiest)
+
+1. Download `com.vsd.craft.heos.sdPlugin.zip` from the [latest release](https://github.com/Matt-PMCT/HEOS_SteamDock_Plugin/releases/latest)
+2. Extract the zip
+3. Copy the `com.vsd.craft.heos.sdPlugin` folder to your plugins directory:
+   - **Windows:** `%AppData%\HotSpot\StreamDock\plugins\`
+   - **macOS:** `~/Library/Application Support/HotSpot/StreamDock/plugins/`
+4. Restart VSD Craft
+
 ### From source
 
 ```bash
