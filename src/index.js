@@ -4,6 +4,7 @@ const playPause = require('./actions/play-pause');
 const nextPrev = require('./actions/next-prev');
 const mute = require('./actions/mute');
 const volume = require('./actions/volume');
+const preset = require('./actions/preset');
 
 // --- Module-Level State ---
 
@@ -22,6 +23,7 @@ for (const uuid of nextPrev.actionUUIDs) {
 }
 handlers[mute.actionUUID] = mute;
 handlers[volume.actionUUID] = volume;
+handlers[preset.actionUUID] = preset;
 
 // --- CLI Argument Parsing ---
 
