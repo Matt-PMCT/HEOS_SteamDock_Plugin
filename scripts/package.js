@@ -14,7 +14,7 @@ const ZIP_NAME = 'com.vsd.craft.heos.sdPlugin.zip';
 // 1. Strip Debug field from manifest (preserving original formatting)
 const manifestPath = path.join(PLUGIN_DIR, 'manifest.json');
 const original = fs.readFileSync(manifestPath, 'utf8');
-const stripped = original.replace(/^\s*"Debug":.*,?\n/m, '');
+const stripped = original.replace(/,\n\s*"Debug":[^\n]*/m, '');
 
 if (stripped !== original) {
   fs.writeFileSync(manifestPath, stripped);
