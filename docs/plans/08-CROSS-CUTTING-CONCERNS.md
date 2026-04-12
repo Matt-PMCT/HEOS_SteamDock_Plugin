@@ -36,7 +36,17 @@ All keys/actions share one plugin process instance, differentiated by `context` 
 
 ### Debug Port Security
 
-`"Debug": "--inspect=127.0.0.1:3210"` must be removed from manifest before distribution to avoid exposing a debug port on end-user machines.
+`"Debug": "--inspect=127.0.0.1:3210"` must be removed from manifest before distribution to avoid exposing a debug port on end-user machines. This is handled by `scripts/package.js` which strips the field via regex before zipping.
+
+**Trailing comma gotcha:** When stripping a JSON field via regex, ensure the preceding line's trailing comma is also removed. The regex must match `,\n\s*"Debug":[^\n]*` (consuming the comma from the previous line), not just the Debug line itself. Stripping only the line leaves invalid JSON with a trailing comma, and VSD Craft silently ignores plugins with unparseable manifests (no error in logs).
+
+### VSD Craft Silently Ignores Invalid Manifests
+
+If `manifest.json` contains invalid JSON (syntax errors, trailing commas, etc.), VSD Craft will not load the plugin and will not log any error. There is no manifest validation feedback. Always verify packaged manifests parse as valid JSON before distribution.
+
+### Category Field Controls Action List Grouping
+
+The manifest `"Category"` field is what VSD Craft displays in the action list sidebar. Use the plugin name (e.g., `"HEOS Control"`) rather than a generic category (e.g., `"Audio"`) so users can identify the plugin. The working Mirabox PR plugin uses its own name as the category.
 
 ### macOS Minimum Version
 

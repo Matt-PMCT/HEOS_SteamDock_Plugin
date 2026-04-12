@@ -30,6 +30,10 @@ MagTran M3 --> VSD Craft (WebSocket) --> Plugin (Node.js) --> HEOS Speaker (TCP:
 ```
 heos-plugin/
   package.json
+  scripts/
+    package.js                # Strips Debug from manifest, zips plugin for release
+  .github/workflows/
+    release.yml               # On v* tag: build, package, create GitHub Release
   src/
     index.js                  # WebSocket registration, event dispatch
     heos-client.js            # TCP connection, command queue, parser, events
@@ -42,11 +46,9 @@ heos-plugin/
 
 com.vsd.craft.heos.sdPlugin/
   manifest.json               # Phase 1 (full manifest from preliminary doc 05)
-  plugin/index.js             # ncc bundled output
+  plugin/index.js             # ncc bundled output (gitignored, built by ncc)
   property-inspector/
-    index.html                # Phase 5
-    js/pi.js                  # Phase 5
-    css/pi.css                # Phase 5
+    index.html                # Basic version exists (IP + player ID fields); Phase 5 expands
   images/                     # Placeholder Phase 1, production Phase 6
 ```
 
@@ -54,6 +56,8 @@ com.vsd.craft.heos.sdPlugin/
 
 These gotchas apply across all phases. See [Cross-Cutting Concerns](./08-CROSS-CUTTING-CONCERNS.md) for the full reference.
 
-**SDK:** Manifest uses `"Knob"` but runtime sends `"Encoder"` -- never check for "Knob" at runtime. `dialUp` fires immediately after `dialDown` -- unreliable for long-press. No `setFeedback`/`setFeedbackLayout` -- use `setImage`. UUIDs must be all lowercase. Node.js 20.8.1 lacks native WebSocket.
+**SDK:** Manifest uses `"Knob"` but runtime sends `"Encoder"` -- never check for "Knob" at runtime. `dialUp` fires immediately after `dialDown` -- unreliable for long-press. No `setFeedback`/`setFeedbackLayout` -- use `setImage`. UUIDs must be all lowercase. Node.js 20.8.1 lacks native WebSocket. Invalid manifest JSON = silent failure (no log output). Use plugin name for `Category` field, not a generic category.
 
-**HEOS:** Commands MUST be serialized (one at a time). Player IDs are signed, can be negative. `message` field is URL-encoded, not JSON. `play_preset` is `browse/`, not `player/`. Events lack `result` field. CLI module takes 1-2s to spin up. Heartbeat every 30s.
+**HEOS:** Commands MUST be serialized (one at a time). Player IDs are signed, can be negative. `message` field is URL-encoded, not JSON. `play_preset` is `browse/`, not `player/`. Events lack `result` field. CLI module takes 1-2s to spin up. Heartbeat every 30s. Grouped speakers share playback -- selecting a group leader affects all members.
+
+**Packaging:** `scripts/package.js` strips `Debug` from manifest via regex. The regex must consume the trailing comma from the preceding line to avoid producing invalid JSON.

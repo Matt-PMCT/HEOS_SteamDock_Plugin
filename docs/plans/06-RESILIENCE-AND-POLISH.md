@@ -254,17 +254,11 @@ Replace placeholder PNGs with proper icons. White on transparent, consistent med
 
 ---
 
-## Step 9: Remove Debug Configuration
+## Step 9: Remove Debug Configuration — DONE
 
-In `manifest.json`, remove the Debug line:
+The `Debug` field is automatically stripped from `manifest.json` during packaging by `scripts/package.js`. The GitHub Actions release workflow (`.github/workflows/release.yml`) runs this on every `v*` tag push, producing a clean zip with no debug port exposed.
 
-```json
-"Nodejs": {
-  "Version": "20"
-}
-```
-
-Consider adding a build step that strips `Debug` from manifest for distribution.
+The `Debug` field remains in the source manifest for local development (`--inspect=127.0.0.1:3210`).
 
 ---
 

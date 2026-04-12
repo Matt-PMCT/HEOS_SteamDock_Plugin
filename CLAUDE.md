@@ -18,6 +18,12 @@ npm run dev                # Watch mode (rebuilds on file changes)
 
 Build uses `@vercel/ncc` to bundle all source + the `ws` dependency into a single `plugin/index.js`. The only runtime dependency is `ws` (Node 20.8.1 lacks native WebSocket).
 
+```bash
+npm run package            # Build + strip Debug from manifest + zip for release
+```
+
+Release workflow: push a `v*` tag to create a GitHub Release with the packaged zip automatically.
+
 ## Architecture
 
 ```
@@ -51,7 +57,10 @@ These are non-obvious constraints that cause hard-to-debug failures:
 - `dialUp` fires immediately after `dialDown` (no real release detection). Trigger actions on `dialDown` only.
 - No `setFeedback`/`setFeedbackLayout` -- use `setImage()` with SVG or base64 PNG.
 - All action UUIDs must be lowercase.
-- Remove `"Debug"` field from manifest before distribution.
+- Remove `"Debug"` field from manifest before distribution. `scripts/package.js` handles this automatically.
+- VSD Craft silently ignores plugins with invalid `manifest.json` (no error in logs). Always verify packaged JSON is valid.
+- `"Category"` field in manifest controls the action list heading in VSD Craft. Use the plugin name, not a generic category.
+- Grouped speakers share playback -- controlling a group leader affects all members. Player selection UI must show group membership.
 
 ## Design Decisions
 

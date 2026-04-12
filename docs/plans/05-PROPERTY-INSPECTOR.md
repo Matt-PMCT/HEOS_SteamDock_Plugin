@@ -8,6 +8,15 @@ Build the settings UI that allows users to configure the HEOS speaker IP address
 
 **Done when:** A user can enter an IP, discover speakers, select a player, and configure presets entirely from VSD Craft.
 
+## Current State
+
+A basic Property Inspector already exists at `property-inspector/index.html` with inline CSS/JS. It provides:
+- Speaker IP address text input (saved to global settings)
+- Player ID text input (saved to global settings)
+- Uses `connectElgatoStreamDeckSocket` entry point and browser-native WebSocket
+
+**Known issue from testing:** When a user enters only the speaker IP and leaves Player ID blank, the plugin uses the first player returned by the speaker. If speakers are grouped, this may be the group leader, causing playback on unexpected speakers. Phase 5 must replace the manual Player ID input with a proper discovery-based dropdown that shows speaker names and group membership.
+
 ## Dependencies
 
 Phase 1 (WebSocket registration, TCP connection), Phase 2 (player discovery, init), Phase 4 (preset settings).
@@ -16,9 +25,7 @@ Phase 1 (WebSocket registration, TCP connection), Phase 2 (player discovery, ini
 
 | File | Action |
 |------|--------|
-| `com.vsd.craft.heos.sdPlugin/property-inspector/index.html` | **New** -- PI HTML |
-| `com.vsd.craft.heos.sdPlugin/property-inspector/js/pi.js` | **New** -- PI logic |
-| `com.vsd.craft.heos.sdPlugin/property-inspector/css/pi.css` | **New** -- PI styling |
+| `com.vsd.craft.heos.sdPlugin/property-inspector/index.html` | **Rewrite** -- expand basic PI into full settings UI (inline CSS/JS, single file) |
 | `src/index.js` | **Modify** -- handle `sendToPlugin` messages |
 
 ---
@@ -132,6 +139,9 @@ function handleMessage(message) {
       <select class="sdpi-item-value" id="player-select">
         <option value="">Select a player...</option>
       </select>
+      <div class="sdpi-item-hint" id="group-hint" style="display:none;">
+        <!-- Show group membership so users understand speaker relationships -->
+      </div>
     </div>
   </div>
 
@@ -214,6 +224,7 @@ function handlePIMessage(message) {
         type: 'status',
         connected: heosClient.isConnected(),
         players: heosClient.players,
+        groups: heosClient.groups,  // Include groups so PI can show membership
         selectedPid: heosClient.playerId,
         signedIn: heosClient.signedIn
       });
@@ -333,20 +344,38 @@ function handlePluginData(payload) {
 }
 ```
 
-### `populatePlayerDropdown(players, selectedPid)`
+### `populatePlayerDropdown(players, selectedPid, groups)`
 
 ```js
-function populatePlayerDropdown(players, selectedPid) {
+function populatePlayerDropdown(players, selectedPid, groups) {
   const select = document.getElementById('player-select');
   document.getElementById('player-row').style.display = '';
   select.innerHTML = '<option value="">Select a player...</option>';
   for (const player of players) {
     const opt = document.createElement('option');
     opt.value = player.pid;
-    opt.textContent = player.name + ' (' + player.model + ')';
+    // Show group membership so users understand which speakers are linked
+    const groupName = findGroupForPlayer(player.pid, groups);
+    opt.textContent = player.name + ' (' + player.model + ')' +
+      (groupName ? ' [Group: ' + groupName + ']' : '');
     if (player.pid === selectedPid) opt.selected = true;
     select.appendChild(opt);
   }
+  // Show hint if groups exist
+  const hint = document.getElementById('group-hint');
+  if (groups && groups.length > 0) {
+    hint.style.display = '';
+    hint.textContent = 'Grouped speakers share playback. Select the specific speaker you want to control.';
+  }
+}
+
+function findGroupForPlayer(pid, groups) {
+  if (!groups) return null;
+  for (const group of groups) {
+    const members = group.players || [];
+    if (members.some(p => p.pid === pid)) return group.name;
+  }
+  return null;
 }
 ```
 
@@ -450,6 +479,8 @@ Dark theme matching VSD Craft. Uses `.sdpi-*` class naming conventions. See the 
 5. **PI uses browser-native WebSocket:** NOT the `ws` package.
 6. **Password handling:** Do NOT store password in global settings. Sign-in is session-based. Store username only for display.
 7. **IP validation:** Basic format check before sending. Don't validate reachability from PI (browser sandbox).
+8. **Grouped speakers:** When speakers are grouped, `get_players` still returns individual players, but controlling the group leader affects all members. The PI must fetch groups (`get_groups`) and show group membership next to each player so users understand which speaker to select. Without this, users will be confused when playback starts on unexpected speakers.
+9. **Auto-detect player ID:** When Player ID is left blank, the plugin currently uses the first player from `get_players`. This can be the wrong speaker if multiple players exist on the same IP (e.g., stereo pair, grouped speakers). The PI should always prompt the user to explicitly select a player after discovery.
 
 ## Verification
 
