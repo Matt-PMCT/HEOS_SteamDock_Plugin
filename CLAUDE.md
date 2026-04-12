@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 VSDinside StreamDock plugin that controls Denon HEOS speakers from physical buttons and rotary knobs (MagTran M3 and other StreamDock devices). Node.js 20.8.1 backend communicating with HEOS speakers over TCP port 1255.
 
-**Status:** Phases 1-2 complete. Infrastructure (WebSocket, TCP, command queue) and core playback actions (play/pause, next/prev, mute) are implemented. Next: Phase 3 (volume knob). See `docs/plans/00-SUMMARY.md` for the full roadmap.
+**Status:** Phases 1-3 complete. Infrastructure (WebSocket, TCP, command queue), core playback actions (play/pause, next/prev, mute), and volume knob control are implemented. Next: Phase 4 (preset buttons). See `docs/plans/00-SUMMARY.md` for the full roadmap.
 
 ## Build Commands
 
@@ -59,3 +59,4 @@ These are non-obvious constraints that cause hard-to-debug failures:
 - **Single dependency (`ws`).** No `fs-extra`, `log4js`, or template bloat.
 - **Global settings** for speaker IP and player ID (shared across all action instances). Per-action settings only for action-specific config (e.g., preset number).
 - **All 6 actions defined in manifest from Phase 1** to avoid manifest churn across phases.
+- **Volume debounce pattern:** Rapid `dialRotate` ticks are accumulated and flushed via a 50ms trailing-edge debounce timer, not sent individually. `enqueueVolume()` replaces stale `set_volume` commands in the queue so only the latest target is sent. Replaced commands are rejected (not resolved) so callers can distinguish them from real errors.
