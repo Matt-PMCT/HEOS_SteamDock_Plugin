@@ -1,0 +1,149 @@
+{
+  "Name": "HEOS Control",
+  "Version": "1.0.0",
+  "Author": "Your Name",
+  "Description": "Control Denon HEOS speakers from your StreamDock. Play, pause, skip tracks, adjust volume with knobs, mute, and launch favorite presets.",
+  "Icon": "images/plugin-icon.png",
+  "CategoryIcon": "images/category-icon.png",
+  "Category": "Audio",
+  "URL": "",
+  "CodePathWin": "plugin/index.js",
+  "CodePathMac": "plugin/index.js",
+  "SDKVersion": 1,
+  "Software": {
+    "MinimumVersion": "3.10.188.226"
+  },
+  "OS": [
+    {
+      "Platform": "windows",
+      "MinimumVersion": "10"
+    },
+    {
+      "Platform": "mac",
+      "MinimumVersion": "11"
+    }
+  ],
+  "Nodejs": {
+    "Version": "20",
+    "Debug": "--inspect=127.0.0.1:3210"
+  },
+  "Actions": [
+    {
+      "UUID": "com.vsd.craft.heos.playpause",
+      "Name": "Play / Pause",
+      "Icon": "images/actions/play-pause.png",
+      "Tooltip": "Toggle playback on your HEOS speaker",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "images/actions/play.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Play"
+        },
+        {
+          "Image": "images/actions/pause.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Pause"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.next",
+      "Name": "Next Track",
+      "Icon": "images/actions/next.png",
+      "Tooltip": "Skip to next track",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "images/actions/next.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Next"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.previous",
+      "Name": "Previous Track",
+      "Icon": "images/actions/prev.png",
+      "Tooltip": "Go to previous track",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "images/actions/prev.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Prev"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.mute",
+      "Name": "Mute Toggle",
+      "Icon": "images/actions/mute.png",
+      "Tooltip": "Toggle mute on your HEOS speaker",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "images/actions/unmuted.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Mute"
+        },
+        {
+          "Image": "images/actions/muted.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Muted"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.volume",
+      "Name": "Volume Control",
+      "Icon": "images/actions/volume.png",
+      "Tooltip": "Rotate knob to adjust HEOS volume, press to mute",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": false,
+      "Controllers": ["Knob"],
+      "States": [
+        {
+          "Image": "images/actions/volume.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Vol"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.preset",
+      "Name": "Play Preset",
+      "Icon": "images/actions/preset.png",
+      "Tooltip": "Play a HEOS favorite preset",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "Settings": {
+        "presetNumber": 1
+      },
+      "States": [
+        {
+          "Image": "images/actions/preset.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Preset"
+        }
+      ]
+    }
+  ]
+}
