@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>HEOS Control</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      padding: 12px;
+      background-color: #2a2a2a;
+      color: #d0d0d0;
+      font-size: 13px;
+      margin: 0;
+    }
+    .field { margin-bottom: 12px; }
+    label { display: block; margin-bottom: 4px; color: #9e9e9e; font-size: 11px; text-transform: uppercase; }
+    input {
+      width: 100%; box-sizing: border-box;
+      padding: 6px 8px; border: 1px solid #444; border-radius: 4px;
+      background: #1a1a1a; color: #fff; font-size: 13px;
+    }
+    input:focus { outline: none; border-color: #0078d4; }
+    .hint { font-size: 11px; color: #777; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="field">
+    <label>Speaker IP Address</label>
+    <input type="text" id="heosIp" placeholder="192.168.1.100" />
+    <div class="hint">Find in HEOS app: Settings > My Devices > [speaker] > Advanced</div>
+  </div>
+  <div class="field">
+    <label>Player ID</label>
+    <input type="text" id="playerId" placeholder="Auto-detect from IP" />
+    <div class="hint">Leave blank to use the first player found on the speaker</div>
+  </div>
+
+  <script>
+    var websocket = null;
+    var pluginUUID = null;
+    var globalSettings = {};
+
+    // VSD Craft calls this function to initialize the Property Inspector
+    function connectElgatoStreamDeckSocket(port, uuid, event, appInfoStr, actionInfo) {
+      pluginUUID = uuid;
+      websocket = new WebSocket('ws://127.0.0.1:' + port);
+
+      websocket.onopen = function () {
+        websocket.send(JSON.stringify({ event: event, uuid: uuid }));
+        // Request current global settings
+        websocket.send(JSON.stringify({ event: 'getGlobalSettings', context: uuid }));
+      };
+
+      websocket.onmessage = function (evt) {
+        var msg = JSON.parse(evt.data);
+        if (msg.event === 'didReceiveGlobalSettings') {
+          globalSettings = (msg.payload && msg.payload.settings) || {};
+          document.getElementById('heosIp').value = globalSettings.heosIp || '';
+          document.getElementById('playerId').value = globalSettings.playerId || '';
+        }
+      };
+    }
+
+    function saveGlobalSettings() {
+      if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+      globalSettings.heosIp = document.getElementById('heosIp').value.trim();
+      globalSettings.playerId = document.getElementById('playerId').value.trim();
+      websocket.send(JSON.stringify({
+        event: 'setGlobalSettings',
+        context: pluginUUID,
+        payload: globalSettings
+      }));
+    }
+
+    document.getElementById('heosIp').addEventListener('change', saveGlobalSettings);
+    document.getElementById('playerId').addEventListener('change', saveGlobalSettings);
+  </script>
+</body>
+</html>
