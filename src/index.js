@@ -1,5 +1,8 @@
 const WebSocket = require('ws');
 const { HeosClient, parseHeosMessage } = require('./heos-client');
+const playPause = require('./actions/play-pause');
+const nextPrev = require('./actions/next-prev');
+const mute = require('./actions/mute');
 
 // --- Module-Level State ---
 
@@ -11,44 +14,12 @@ const contextMap = new Map(); // Map<context, { action, settings }>
 
 // --- Action Handler Registry ---
 
-// Keyed by action UUID. Phase 1: test handler that sends heartbeat.
-// Phase 2+ replaces with real action handlers.
 const handlers = {};
-
-// Phase 1 test: all actions send heartbeat on keyDown
-const ACTION_UUIDS = [
-  'com.vsd.craft.heos.playpause',
-  'com.vsd.craft.heos.next',
-  'com.vsd.craft.heos.previous',
-  'com.vsd.craft.heos.mute',
-  'com.vsd.craft.heos.volume',
-  'com.vsd.craft.heos.preset'
-];
-
-for (const uuid of ACTION_UUIDS) {
-  handlers[uuid] = {
-    onKeyDown(message) {
-      console.log('[Plugin] keyDown on', message.action);
-      if (!heosClient.isConnected()) {
-        showAlert(message.context);
-        return;
-      }
-      heosClient.enqueue('heos://system/heart_beat')
-        .then(res => console.log('[Plugin] Heartbeat response:', JSON.stringify(res.heos)))
-        .catch(err => console.error('[Plugin] Heartbeat error:', err.message));
-    },
-    onDialDown(message) {
-      console.log('[Plugin] dialDown on', message.action);
-      if (!heosClient.isConnected()) {
-        showAlert(message.context);
-        return;
-      }
-      heosClient.enqueue('heos://system/heart_beat')
-        .then(res => console.log('[Plugin] Heartbeat response:', JSON.stringify(res.heos)))
-        .catch(err => console.error('[Plugin] Heartbeat error:', err.message));
-    }
-  };
+handlers[playPause.actionUUID] = playPause;
+for (const uuid of nextPrev.actionUUIDs) {
+  handlers[uuid] = nextPrev;
 }
+handlers[mute.actionUUID] = mute;
 
 // --- CLI Argument Parsing ---
 
@@ -108,11 +79,44 @@ function sendToPropertyInspector(action, context, payload) {
   send({ event: 'sendToPropertyInspector', action, context, payload });
 }
 
+// --- VSD Helper Object (passed to action handlers) ---
+
+const vsd = {
+  setTitle,
+  setState,
+  setImage,
+  showOk,
+  showAlert,
+  setGlobalSettings,
+  requestGlobalSettings: getGlobalSettings,
+  setSettings,
+  sendToPropertyInspector
+};
+
+// --- Context Helpers ---
+
+function getContextsForAction(actionUUID) {
+  const contexts = [];
+  for (const [ctx, info] of contextMap) {
+    if (info.action === actionUUID) contexts.push(ctx);
+  }
+  return contexts;
+}
+
 // --- HEOS Event Callback ---
 
 function onHeosEvent(msg) {
-  // Phase 2 adds real event handling (player_state_changed, etc.)
-  console.log('[HEOS Event]', msg.heos.command, msg.heos.message || '');
+  const eventName = msg.heos.command;
+  const params = parseHeosMessage(msg.heos.message);
+
+  for (const [uuid, handler] of Object.entries(handlers)) {
+    if (handler.onHeosEvent) {
+      const contexts = getContextsForAction(uuid);
+      if (contexts.length > 0) {
+        handler.onHeosEvent(eventName, params, { contexts, heosClient, vsd });
+      }
+    }
+  }
 }
 
 // --- Event Dispatch ---
@@ -127,50 +131,54 @@ function dispatchEvent(message) {
         action,
         settings: (message.payload && message.payload.settings) || {}
       });
-      if (handler && handler.onWillAppear) handler.onWillAppear(message);
+      if (handler && handler.onWillAppear) handler.onWillAppear(message, { heosClient, vsd });
       break;
 
     case 'willDisappear':
       contextMap.delete(context);
-      if (handler && handler.onWillDisappear) handler.onWillDisappear(message);
+      if (handler && handler.onWillDisappear) handler.onWillDisappear(message, { heosClient, vsd });
       break;
 
     case 'keyDown':
-      if (handler && handler.onKeyDown) handler.onKeyDown(message);
+      if (handler && handler.onKeyDown) handler.onKeyDown(message, { heosClient, vsd });
       break;
 
     case 'keyUp':
-      if (handler && handler.onKeyUp) handler.onKeyUp(message);
+      if (handler && handler.onKeyUp) handler.onKeyUp(message, { heosClient, vsd });
       break;
 
     case 'dialRotate':
-      if (handler && handler.onDialRotate) handler.onDialRotate(message);
+      if (handler && handler.onDialRotate) handler.onDialRotate(message, { heosClient, vsd });
       break;
 
     case 'dialDown':
-      if (handler && handler.onDialDown) handler.onDialDown(message);
+      if (handler && handler.onDialDown) handler.onDialDown(message, { heosClient, vsd });
       break;
 
     case 'dialUp':
-      if (handler && handler.onDialUp) handler.onDialUp(message);
+      if (handler && handler.onDialUp) handler.onDialUp(message, { heosClient, vsd });
       break;
 
     case 'didReceiveSettings':
       if (contextMap.has(context)) {
         contextMap.get(context).settings = (message.payload && message.payload.settings) || {};
       }
-      if (handler && handler.onDidReceiveSettings) handler.onDidReceiveSettings(message);
+      if (handler && handler.onDidReceiveSettings) handler.onDidReceiveSettings(message, { heosClient, vsd });
       break;
 
     case 'didReceiveGlobalSettings': {
       const newSettings = (message.payload && message.payload.settings) || {};
       const ipChanged = newSettings.heosIp && newSettings.heosIp !== globalSettings.heosIp;
+      const playerIdChanged = newSettings.playerId !== globalSettings.playerId;
+      const pid = newSettings.playerId ? parseInt(newSettings.playerId, 10) : null;
       globalSettings = newSettings;
 
       if (ipChanged || (!heosClient.isConnected() && globalSettings.heosIp)) {
-        if (ipChanged) heosClient.reconnectDelay = 1000; // Reset backoff on explicit IP change
+        if (ipChanged) heosClient.reconnectDelay = 1000;
+        heosClient.playerId = pid;
         heosClient.connect(globalSettings.heosIp);
-        // Phase 2 adds: heosClient.runInitSequence(parseInt(globalSettings.playerId, 10))
+      } else if (playerIdChanged && heosClient.isConnected()) {
+        heosClient.runInitSequence(pid);
       }
       break;
     }
@@ -180,7 +188,7 @@ function dispatchEvent(message) {
       break;
 
     case 'sendToPlugin':
-      if (handler && handler.onSendToPlugin) handler.onSendToPlugin(message);
+      if (handler && handler.onSendToPlugin) handler.onSendToPlugin(message, { heosClient, vsd });
       break;
 
     case 'propertyInspectorDidAppear':

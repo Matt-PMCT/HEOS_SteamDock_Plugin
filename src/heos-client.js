@@ -72,7 +72,24 @@ class HeosClient {
     this._retryEntry = null;       // Entry in-limbo during retry delay
     this.eventCallback = eventCallback;
 
-    // Init promise (resolved when TCP connect completes; Phase 2 extends to full init sequence)
+    // Player state tracking
+    this.players = [];
+    this.playerId = null;
+    this.signedIn = false;
+    this.playerState = {
+      playState: 'stop',
+      volume: 0,
+      mute: false,
+      media: null
+    };
+
+    // Init sequence guard and debounce timers
+    this._initRunning = false;
+    this._pendingInitPid = undefined; // queued re-run if init called while running
+    this._playersChangedTimer = null;
+    this._userChangedTimer = null;
+
+    // Init promise (resolved when init sequence completes)
     this.initPromise = Promise.resolve();
     this._initResolve = null;
     this._initReject = null;
@@ -122,15 +139,10 @@ class HeosClient {
       this.socket.setTimeout(0); // Clear connection timeout; heartbeat handles idle detection
       this.reconnectDelay = 1000; // Reset backoff
       this.startHeartbeat();
-
-      // Phase 1: resolve init immediately. Phase 2 adds runInitSequence() here.
-      if (this._initResolve) {
-        this._initResolve();
-        this._initResolve = null;
-        this._initReject = null;
-      }
-
       this.sendNext(); // Drain any queued commands
+
+      // Run init sequence (handles first connect and reconnection)
+      this.runInitSequence(this.playerId);
     });
 
     this.socket.on('data', (data) => {
@@ -172,6 +184,8 @@ class HeosClient {
 
   disconnect() {
     this.stopHeartbeat();
+    this._initRunning = false;
+    this._pendingInitPid = undefined;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -179,6 +193,14 @@ class HeosClient {
     if (this._retryTimer) {
       clearTimeout(this._retryTimer);
       this._retryTimer = null;
+    }
+    if (this._playersChangedTimer) {
+      clearTimeout(this._playersChangedTimer);
+      this._playersChangedTimer = null;
+    }
+    if (this._userChangedTimer) {
+      clearTimeout(this._userChangedTimer);
+      this._userChangedTimer = null;
     }
     if (this._retryEntry) {
       this._retryEntry.reject(new Error('Disconnected'));
@@ -317,7 +339,7 @@ class HeosClient {
 
     // 1. Is it an event?
     if (command.startsWith('event/')) {
-      this.eventCallback(msg);
+      this.handleHeosEvent(msg);
       return;
     }
 
@@ -393,6 +415,155 @@ class HeosClient {
     this.pending = null;
     p.resolve(msg);
     this.sendNext();
+  }
+
+  // --- Init Sequence ---
+
+  async runInitSequence(playerId) {
+    if (this._initRunning) {
+      this._pendingInitPid = playerId;
+      return;
+    }
+    this._initRunning = true;
+    this._pendingInitPid = undefined;
+
+    try {
+      // 1. Unregister for events (defensive reset)
+      await this.enqueue('heos://system/register_for_change_events?enable=off');
+
+      // 2. Check account status
+      const accountResp = await this.enqueue('heos://system/check_account');
+      const accountMsg = parseHeosMessage(accountResp.heos.message);
+      this.signedIn = accountMsg.signed_in === 'true' || !!accountMsg.un;
+
+      if (!this.signedIn) {
+        console.warn('[HEOS] Not signed in. Streaming presets require sign-in via Property Inspector.');
+      }
+
+      // 3. Get all players
+      const playersResp = await this.enqueue('heos://player/get_players');
+      this.players = playersResp.payload || [];
+
+      // 3b. Retry once after 2s if empty (CLI module may still be spinning up)
+      if (this.players.length === 0) {
+        console.warn('[HEOS] No players found. Retrying after 2s delay...');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        const retryResp = await this.enqueue('heos://player/get_players');
+        this.players = retryResp.payload || [];
+        if (this.players.length === 0) {
+          console.warn('[HEOS] Still no players found. User may need to check network.');
+        }
+      }
+
+      // 4. Set player ID and poll state
+      if (playerId != null) {
+        this.playerId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
+      } else if (this.players.length > 0) {
+        this.playerId = this.players[0].pid;
+      }
+
+      if (this.playerId != null) {
+        await this.pollPlayerState(this.playerId);
+      }
+
+      // 5. Register for change events
+      await this.enqueue('heos://system/register_for_change_events?enable=on');
+
+      console.log('[HEOS] Init sequence complete. Player:', this.playerId, 'State:', this.playerState.playState);
+    } catch (err) {
+      console.error('[HEOS] Init sequence failed:', err.message);
+    } finally {
+      this._initRunning = false;
+
+      // Resolve init promise regardless of success/failure
+      if (this._initResolve) {
+        this._initResolve();
+        this._initResolve = null;
+        this._initReject = null;
+      }
+
+      // Re-run if a new init was requested while we were running
+      if (this._pendingInitPid !== undefined) {
+        const pid = this._pendingInitPid;
+        this._pendingInitPid = undefined;
+        this.runInitSequence(pid);
+      }
+    }
+  }
+
+  async pollPlayerState(pid) {
+    const stateResp = await this.enqueue(`heos://player/get_play_state?pid=${pid}`);
+    const volResp = await this.enqueue(`heos://player/get_volume?pid=${pid}`);
+    const muteResp = await this.enqueue(`heos://player/get_mute?pid=${pid}`);
+    const mediaResp = await this.enqueue(`heos://player/get_now_playing_media?pid=${pid}`);
+
+    const stateMsg = parseHeosMessage(stateResp.heos.message);
+    const volMsg = parseHeosMessage(volResp.heos.message);
+    const muteMsg = parseHeosMessage(muteResp.heos.message);
+
+    this.playerState = {
+      playState: stateMsg.state,
+      volume: parseInt(volMsg.level, 10),
+      mute: muteMsg.state === 'on',
+      media: mediaResp.payload || null
+    };
+  }
+
+  // --- HEOS Event Handling ---
+
+  handleHeosEvent(msg) {
+    const eventName = msg.heos.command;
+    const params = parseHeosMessage(msg.heos.message);
+    const pid = params.pid ? parseInt(params.pid, 10) : null;
+
+    // Only process events for our target player (or global events with no pid)
+    if (pid !== null && pid !== this.playerId) return;
+
+    switch (eventName) {
+      case 'event/player_state_changed':
+        this.playerState.playState = params.state;
+        break;
+
+      case 'event/player_volume_changed':
+        this.playerState.volume = parseInt(params.level, 10);
+        this.playerState.mute = params.mute === 'on';
+        break;
+
+      case 'event/player_now_playing_changed':
+        this.enqueue(`heos://player/get_now_playing_media?pid=${this.playerId}`)
+          .then(resp => { this.playerState.media = resp.payload || null; })
+          .catch(() => {});
+        break;
+
+      case 'event/players_changed':
+        clearTimeout(this._playersChangedTimer);
+        this._playersChangedTimer = setTimeout(() => {
+          this.enqueue('heos://player/get_players')
+            .then(resp => { this.players = resp.payload || []; })
+            .catch(() => {});
+        }, 500);
+        break;
+
+      case 'event/player_playback_error':
+        console.error('[HEOS] Playback error for player:', pid);
+        this.playerState.playState = 'stop';
+        break;
+
+      case 'event/user_changed':
+        clearTimeout(this._userChangedTimer);
+        this._userChangedTimer = setTimeout(() => {
+          this.enqueue('heos://system/check_account')
+            .then(resp => {
+              const accountMsg = parseHeosMessage(resp.heos.message);
+              this.signedIn = accountMsg.signed_in === 'true' || !!accountMsg.un;
+            })
+            .catch(() => {});
+        }, 500);
+        break;
+    }
+
+    // Forward to index.js callback for button state updates
+    this.eventCallback(msg);
   }
 
   // --- Internal Helpers ---
