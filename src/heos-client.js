@@ -566,6 +566,23 @@ class HeosClient {
     this.eventCallback(msg);
   }
 
+  // --- Volume Queue Replacement ---
+
+  enqueueVolume(pid, level) {
+    const command = `heos://player/set_volume?pid=${pid}&level=${level}`;
+
+    // Remove stale volume commands from queue (not the in-flight one)
+    this.queue = this.queue.filter(entry => {
+      if (entry.command.startsWith('heos://player/set_volume?')) {
+        entry.reject(new Error('Replaced by newer volume command'));
+        return false;
+      }
+      return true;
+    });
+
+    return this.enqueue(command);
+  }
+
   // --- Internal Helpers ---
 
   rejectPending(reason) {

@@ -3,6 +3,7 @@ const { HeosClient, parseHeosMessage } = require('./heos-client');
 const playPause = require('./actions/play-pause');
 const nextPrev = require('./actions/next-prev');
 const mute = require('./actions/mute');
+const volume = require('./actions/volume');
 
 // --- Module-Level State ---
 
@@ -20,6 +21,7 @@ for (const uuid of nextPrev.actionUUIDs) {
   handlers[uuid] = nextPrev;
 }
 handlers[mute.actionUUID] = mute;
+handlers[volume.actionUUID] = volume;
 
 // --- CLI Argument Parsing ---
 
