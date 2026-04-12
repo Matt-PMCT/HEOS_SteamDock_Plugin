@@ -5,7 +5,7 @@
   "Description": "Control Denon HEOS speakers from your StreamDock. Play, pause, skip tracks, adjust volume with knobs, mute, and launch favorite presets.",
   "Icon": "images/plugin-icon.png",
   "CategoryIcon": "images/category-icon.png",
-  "Category": "Audio",
+  "Category": "HEOS Control",
   "URL": "",
   "CodePathWin": "plugin/index.js",
   "CodePathMac": "plugin/index.js",
