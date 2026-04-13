@@ -149,7 +149,18 @@
     <div class="sdpi-item-hint" id="group-hint" style="display:none;"></div>
   </div>
 
-  <!-- Section 2: Preset config (ONLY for preset action) -->
+  <!-- Section 2: Play/Pause settings (ONLY for playpause action) -->
+  <div id="playpause-section" style="display:none;">
+    <div class="sdpi-heading">Play / Pause Settings</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-checkbox-item">
+        <input type="checkbox" id="show-album-art" checked />
+        <label for="show-album-art">Show album art on button</label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 3: Preset config (ONLY for preset action) -->
   <div id="preset-section" style="display:none;">
     <div class="sdpi-heading">Preset Settings</div>
     <div class="sdpi-wrapper">
@@ -404,6 +415,14 @@
     }
 
     function populateActionUI() {
+      var playpauseSection = document.getElementById('playpause-section');
+      if (currentAction === 'com.vsd.craft.heos.playpause') {
+        playpauseSection.style.display = '';
+        document.getElementById('show-album-art').checked = currentSettings.showAlbumArt !== false;
+      } else {
+        playpauseSection.style.display = 'none';
+      }
+
       var presetSection = document.getElementById('preset-section');
       if (currentAction === 'com.vsd.craft.heos.preset') {
         presetSection.style.display = '';
@@ -568,6 +587,10 @@
         playerId: pid,
         playerName: player ? player.name : 'Unknown'
       });
+    });
+
+    document.getElementById('show-album-art').addEventListener('change', function () {
+      saveSettings({ showAlbumArt: this.checked });
     });
 
     document.getElementById('preset-number').addEventListener('change', function () {

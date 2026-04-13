@@ -1,5 +1,8 @@
 const { fetchAlbumArt } = require('../image-utils');
 
+// Track which contexts have album art enabled (per-action setting)
+const _albumArtEnabled = new Map(); // context -> boolean
+
 function formatNowPlaying(media) {
   if (!media) return '';
   const artist = media.artist || '';
@@ -13,9 +16,11 @@ function updateMediaDisplay(contexts, heosClient, vsd) {
   const media = heosClient.playerState.media;
   const title = formatNowPlaying(media);
 
-  if (media && media.image_url) {
-    fetchAlbumArt(media.image_url, title).then(svgUri => {
-      for (const ctx of contexts) {
+  for (const ctx of contexts) {
+    const showArt = _albumArtEnabled.get(ctx) !== false; // default true
+
+    if (showArt && media && media.image_url) {
+      fetchAlbumArt(media.image_url, title).then(svgUri => {
         if (svgUri) {
           vsd.setImage(ctx, svgUri);
           vsd.setTitle(ctx, '');
@@ -23,10 +28,8 @@ function updateMediaDisplay(contexts, heosClient, vsd) {
           vsd.setImage(ctx, '');
           vsd.setTitle(ctx, title);
         }
-      }
-    });
-  } else {
-    for (const ctx of contexts) {
+      });
+    } else {
       vsd.setImage(ctx, '');
       vsd.setTitle(ctx, title);
     }
@@ -52,8 +55,22 @@ module.exports = {
   },
 
   onWillAppear(message, { heosClient, vsd }) {
+    const settings = message.payload.settings || {};
+    _albumArtEnabled.set(message.context, settings.showAlbumArt !== false);
+
     const state = heosClient.playerState.playState === 'play' ? 1 : 0;
     vsd.setState(message.context, state);
+    updateMediaDisplay([message.context], heosClient, vsd);
+  },
+
+  onWillDisappear(message) {
+    _albumArtEnabled.delete(message.context);
+  },
+
+  onDidReceiveSettings(message, { heosClient, vsd }) {
+    const settings = message.payload.settings || {};
+    _albumArtEnabled.set(message.context, settings.showAlbumArt !== false);
+    // Re-render with new setting
     updateMediaDisplay([message.context], heosClient, vsd);
   },
 
