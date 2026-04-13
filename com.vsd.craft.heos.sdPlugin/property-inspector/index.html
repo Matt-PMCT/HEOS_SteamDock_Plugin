@@ -2,78 +2,425 @@
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>HEOS Control</title>
+  <title>HEOS Control Settings</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-      padding: 12px;
-      background-color: #2a2a2a;
-      color: #d0d0d0;
-      font-size: 13px;
+      padding: 0;
       margin: 0;
+      background-color: #2d2d2d;
+      color: #ccc;
+      font-size: 13px;
     }
-    .field { margin-bottom: 12px; }
-    label { display: block; margin-bottom: 4px; color: #9e9e9e; font-size: 11px; text-transform: uppercase; }
-    input {
-      width: 100%; box-sizing: border-box;
-      padding: 6px 8px; border: 1px solid #444; border-radius: 4px;
-      background: #1a1a1a; color: #fff; font-size: 13px;
+
+    .sdpi-wrapper {
+      padding: 0 16px 8px;
     }
-    input:focus { outline: none; border-color: #0078d4; }
-    .hint { font-size: 11px; color: #777; margin-top: 4px; }
+
+    .sdpi-heading {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: #999;
+      padding: 12px 16px 4px;
+      border-bottom: 1px solid #444;
+      margin-bottom: 8px;
+    }
+
+    .sdpi-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+      min-height: 28px;
+    }
+
+    .sdpi-item-label {
+      flex: 0 0 80px;
+      font-size: 11px;
+      color: #999;
+      text-transform: uppercase;
+    }
+
+    .sdpi-item-value {
+      flex: 1;
+      min-width: 0;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 5px 8px;
+      border: 1px solid #444;
+      border-radius: 3px;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #4a90d9;
+    }
+
+    select {
+      appearance: auto;
+    }
+
+    button {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 3px;
+      background: #4a90d9;
+      color: #fff;
+      font-size: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      background: #5a9fe9;
+    }
+
+    button:active {
+      background: #3a80c9;
+    }
+
+    .sdpi-item-hint {
+      font-size: 11px;
+      color: #777;
+      margin-top: 2px;
+      margin-bottom: 4px;
+      padding-left: 80px;
+    }
+
+    details {
+      margin-top: 4px;
+    }
+
+    summary {
+      font-size: 12px;
+      color: #aaa;
+      cursor: pointer;
+      padding: 4px 0;
+    }
+
+    summary:hover {
+      color: #ccc;
+    }
+
+    details[open] summary {
+      margin-bottom: 8px;
+    }
   </style>
 </head>
 <body>
-  <div class="field">
-    <label>Speaker IP Address</label>
-    <input type="text" id="heosIp" placeholder="192.168.1.100" />
-    <div class="hint">Find in HEOS app: Settings > My Devices > [speaker] > Advanced</div>
+  <!-- Section 1: Connection (shown for ALL actions) -->
+  <div class="sdpi-heading">HEOS Connection</div>
+  <div class="sdpi-wrapper" id="connection-section">
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">Speaker IP</div>
+      <input class="sdpi-item-value" type="text" id="heos-ip"
+             placeholder="192.168.1.100" />
+    </div>
+    <div class="sdpi-item-hint">Find in HEOS app: Settings &gt; My Devices &gt; [speaker] &gt; Advanced</div>
+
+    <div class="sdpi-item">
+      <div class="sdpi-item-label"></div>
+      <button class="sdpi-item-value" id="btn-connect">Connect &amp; Discover</button>
+    </div>
+
+    <div class="sdpi-item" id="status-row">
+      <div class="sdpi-item-label">Status</div>
+      <span class="sdpi-item-value" id="connection-status">Not connected</span>
+    </div>
+
+    <div class="sdpi-item" id="player-row" style="display:none;">
+      <div class="sdpi-item-label">Player</div>
+      <select class="sdpi-item-value" id="player-select">
+        <option value="">Select a player...</option>
+      </select>
+    </div>
+    <div class="sdpi-item-hint" id="group-hint" style="display:none;"></div>
   </div>
-  <div class="field">
-    <label>Player ID</label>
-    <input type="text" id="playerId" placeholder="Auto-detect from IP" />
-    <div class="hint">Leave blank to use the first player found on the speaker</div>
+
+  <!-- Section 2: Preset config (ONLY for preset action) -->
+  <div id="preset-section" style="display:none;">
+    <div class="sdpi-heading">Preset Settings</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Preset #</div>
+        <input class="sdpi-item-value" type="number" id="preset-number"
+               min="1" max="99" value="1" />
+      </div>
+    </div>
+  </div>
+
+  <!-- Section 3: Account (all actions, collapsed by default) -->
+  <div class="sdpi-heading">HEOS Account (optional)</div>
+  <div class="sdpi-wrapper" id="account-section">
+    <details>
+      <summary>Sign in for streaming service presets</summary>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Username</div>
+        <input class="sdpi-item-value" type="text" id="heos-username"
+               placeholder="email@example.com" />
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Password</div>
+        <input class="sdpi-item-value" type="password" id="heos-password" />
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label"></div>
+        <button class="sdpi-item-value" id="btn-signin">Sign In</button>
+      </div>
+      <div class="sdpi-item" id="account-status-row" style="display:none;">
+        <div class="sdpi-item-label">Account</div>
+        <span class="sdpi-item-value" id="account-status"></span>
+      </div>
+    </details>
   </div>
 
   <script>
+    // --- State ---
     var websocket = null;
-    var pluginUUID = null;
+    var piUUID = null;
+    var currentAction = null;
+    var currentContext = null;
+    var currentSettings = {};
     var globalSettings = {};
 
     // VSD Craft calls this function to initialize the Property Inspector
-    function connectElgatoStreamDeckSocket(port, uuid, event, appInfoStr, actionInfo) {
-      pluginUUID = uuid;
-      websocket = new WebSocket('ws://127.0.0.1:' + port);
+    function connectElgatoStreamDeckSocket(inPort, inPropertyInspectorUUID, inRegisterEvent, inInfo, inActionInfo) {
+      piUUID = inPropertyInspectorUUID;
+
+      var actionInfo = JSON.parse(inActionInfo);
+      currentAction = actionInfo.action;
+      currentContext = actionInfo.context;
+      currentSettings = (actionInfo.payload && actionInfo.payload.settings) || {};
+
+      websocket = new WebSocket('ws://127.0.0.1:' + inPort);
 
       websocket.onopen = function () {
-        websocket.send(JSON.stringify({ event: event, uuid: uuid }));
-        // Request current global settings
-        websocket.send(JSON.stringify({ event: 'getGlobalSettings', context: uuid }));
+        // 1. Register PI with VSD Craft
+        websocket.send(JSON.stringify({
+          event: inRegisterEvent,
+          uuid: piUUID
+        }));
+
+        // 2. Request global settings (triggers didReceiveGlobalSettings)
+        websocket.send(JSON.stringify({
+          event: 'getGlobalSettings',
+          context: piUUID
+        }));
+
+        // 3. Ask plugin for current status
+        sendToPlugin({ command: 'getStatus' });
       };
 
       websocket.onmessage = function (evt) {
-        var msg = JSON.parse(evt.data);
-        if (msg.event === 'didReceiveGlobalSettings') {
-          globalSettings = (msg.payload && msg.payload.settings) || {};
-          document.getElementById('heosIp').value = globalSettings.heosIp || '';
-          document.getElementById('playerId').value = globalSettings.playerId || '';
-        }
+        handleMessage(JSON.parse(evt.data));
       };
+
+      populateActionUI();
     }
 
-    function saveGlobalSettings() {
+    // --- Message Routing ---
+
+    function handleMessage(message) {
+      switch (message.event) {
+        case 'didReceiveGlobalSettings':
+          globalSettings = (message.payload && message.payload.settings) || {};
+          populateGlobalUI();
+          break;
+        case 'didReceiveSettings':
+          currentSettings = (message.payload && message.payload.settings) || {};
+          populateActionUI();
+          break;
+        case 'sendToPropertyInspector':
+          handlePluginData(message.payload);
+          break;
+      }
+    }
+
+    // --- UI Population ---
+
+    function populateGlobalUI() {
+      document.getElementById('heos-ip').value = globalSettings.heosIp || '';
+      document.getElementById('heos-username').value = globalSettings.heosUsername || '';
+    }
+
+    function populateActionUI() {
+      var presetSection = document.getElementById('preset-section');
+      if (currentAction === 'com.vsd.craft.heos.preset') {
+        presetSection.style.display = '';
+        document.getElementById('preset-number').value = parseInt(currentSettings.presetNumber, 10) || 1;
+      } else {
+        presetSection.style.display = 'none';
+      }
+    }
+
+    // --- Plugin Data Handler ---
+
+    function handlePluginData(payload) {
+      switch (payload.type) {
+        case 'status':
+          var statusEl = document.getElementById('connection-status');
+          if (payload.connected) {
+            statusEl.textContent = 'Connected';
+            statusEl.style.color = '#6c6';
+          } else {
+            statusEl.textContent = 'Disconnected';
+            statusEl.style.color = '';
+          }
+          if (payload.players && payload.players.length > 0) {
+            populatePlayerDropdown(payload.players, payload.selectedPid, payload.groups);
+          }
+          if (payload.signedIn) {
+            var acctEl = document.getElementById('account-status');
+            var acctRow = document.getElementById('account-status-row');
+            acctRow.style.display = '';
+            acctEl.textContent = 'Signed in';
+            acctEl.style.color = '#6c6';
+          }
+          break;
+
+        case 'connectResult':
+          var statusEl = document.getElementById('connection-status');
+          if (payload.success) {
+            statusEl.textContent = 'Connected';
+            statusEl.style.color = '#6c6';
+            if (payload.players && payload.players.length > 0) {
+              populatePlayerDropdown(payload.players, null, payload.groups);
+            } else {
+              statusEl.textContent = 'Connected (no players found)';
+              statusEl.style.color = '#cc6';
+            }
+          }
+          break;
+
+        case 'error':
+          var statusEl = document.getElementById('connection-status');
+          statusEl.textContent = payload.message;
+          statusEl.style.color = '#c66';
+          break;
+
+        case 'signInResult':
+          var acctEl = document.getElementById('account-status');
+          var acctRow = document.getElementById('account-status-row');
+          acctRow.style.display = '';
+          if (payload.success) {
+            acctEl.textContent = 'Signed in as ' + payload.username;
+            acctEl.style.color = '#6c6';
+            document.getElementById('heos-password').value = '';
+          } else {
+            acctEl.textContent = 'Sign-in failed';
+            acctEl.style.color = '#c66';
+          }
+          break;
+      }
+    }
+
+    // --- Player Dropdown ---
+
+    function populatePlayerDropdown(players, selectedPid, groups) {
+      var select = document.getElementById('player-select');
+      document.getElementById('player-row').style.display = '';
+      select.innerHTML = '<option value="">Select a player...</option>';
+
+      for (var i = 0; i < players.length; i++) {
+        var player = players[i];
+        var opt = document.createElement('option');
+        opt.value = player.pid;
+
+        var label = player.name;
+        if (player.model) label += ' (' + player.model + ')';
+        var groupName = findGroupForPlayer(player.pid, groups);
+        if (groupName) label += ' [Group: ' + groupName + ']';
+        opt.textContent = label;
+
+        if (player.pid === selectedPid) opt.selected = true;
+        select.appendChild(opt);
+      }
+
+      var hint = document.getElementById('group-hint');
+      if (groups && groups.length > 0) {
+        hint.style.display = '';
+        hint.textContent = 'Grouped speakers share playback. Select the specific speaker you want to control.';
+      } else {
+        hint.style.display = 'none';
+      }
+    }
+
+    function findGroupForPlayer(pid, groups) {
+      if (!groups) return null;
+      for (var i = 0; i < groups.length; i++) {
+        var members = groups[i].players || [];
+        for (var j = 0; j < members.length; j++) {
+          if (members[j].pid === pid) return groups[i].name;
+        }
+      }
+      return null;
+    }
+
+    // --- Event Listeners ---
+
+    document.getElementById('btn-connect').addEventListener('click', function () {
+      var ip = document.getElementById('heos-ip').value.trim();
+      if (!ip) return;
+      var statusEl = document.getElementById('connection-status');
+      statusEl.textContent = 'Connecting...';
+      statusEl.style.color = '';
+      sendToPlugin({ command: 'connect', ip: ip });
+    });
+
+    document.getElementById('player-select').addEventListener('change', function () {
+      var pid = this.value;
+      if (!pid) return;
+      sendToPlugin({ command: 'selectPlayer', pid: pid });
+    });
+
+    document.getElementById('preset-number').addEventListener('change', function () {
+      var num = parseInt(this.value, 10) || 1;
+      if (num < 1) num = 1;
+      if (num > 99) num = 99;
+      this.value = num;
+      saveSettings({ presetNumber: num });
+    });
+
+    document.getElementById('btn-signin').addEventListener('click', function () {
+      var un = document.getElementById('heos-username').value.trim();
+      var pw = document.getElementById('heos-password').value;
+      if (!un || !pw) return;
+      sendToPlugin({ command: 'signIn', username: un, password: pw });
+    });
+
+    // --- Helpers ---
+
+    function sendToPlugin(payload) {
       if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
-      globalSettings.heosIp = document.getElementById('heosIp').value.trim();
-      globalSettings.playerId = document.getElementById('playerId').value.trim();
       websocket.send(JSON.stringify({
-        event: 'setGlobalSettings',
-        context: pluginUUID,
-        payload: globalSettings
+        action: currentAction,
+        event: 'sendToPlugin',
+        context: currentContext,
+        payload: payload
       }));
     }
 
-    document.getElementById('heosIp').addEventListener('change', saveGlobalSettings);
-    document.getElementById('playerId').addEventListener('change', saveGlobalSettings);
+    function saveSettings(settings) {
+      currentSettings = Object.assign({}, currentSettings, settings);
+      if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
+      websocket.send(JSON.stringify({
+        event: 'setSettings',
+        context: currentContext,
+        payload: currentSettings
+      }));
+    }
+
   </script>
 </body>
 </html>

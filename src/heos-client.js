@@ -74,6 +74,7 @@ class HeosClient {
 
     // Player state tracking
     this.players = [];
+    this.groups = [];
     this.playerId = null;
     this.signedIn = false;
     this.playerState = {
@@ -87,6 +88,7 @@ class HeosClient {
     this._initRunning = false;
     this._pendingInitPid = undefined; // queued re-run if init called while running
     this._playersChangedTimer = null;
+    this._groupsChangedTimer = null;
     this._userChangedTimer = null;
 
     // Init promise (resolved when init sequence completes)
@@ -197,6 +199,10 @@ class HeosClient {
     if (this._playersChangedTimer) {
       clearTimeout(this._playersChangedTimer);
       this._playersChangedTimer = null;
+    }
+    if (this._groupsChangedTimer) {
+      clearTimeout(this._groupsChangedTimer);
+      this._groupsChangedTimer = null;
     }
     if (this._userChangedTimer) {
       clearTimeout(this._userChangedTimer);
@@ -455,6 +461,10 @@ class HeosClient {
         }
       }
 
+      // 3c. Get groups for PI group membership display
+      const groupsResp = await this.enqueue('heos://group/get_groups');
+      this.groups = groupsResp.payload || [];
+
       // 4. Set player ID and poll state
       if (playerId != null) {
         this.playerId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
@@ -470,17 +480,22 @@ class HeosClient {
       await this.enqueue('heos://system/register_for_change_events?enable=on');
 
       console.log('[HEOS] Init sequence complete. Player:', this.playerId, 'State:', this.playerState.playState);
-    } catch (err) {
-      console.error('[HEOS] Init sequence failed:', err.message);
-    } finally {
-      this._initRunning = false;
-
-      // Resolve init promise regardless of success/failure
+      // Resolve init promise on success
       if (this._initResolve) {
         this._initResolve();
         this._initResolve = null;
         this._initReject = null;
       }
+    } catch (err) {
+      console.error('[HEOS] Init sequence failed:', err.message);
+      // Reject init promise so callers (e.g. PI connect) know it failed
+      if (this._initReject) {
+        this._initReject(err);
+        this._initResolve = null;
+        this._initReject = null;
+      }
+    } finally {
+      this._initRunning = false;
 
       // Re-run if a new init was requested while we were running
       if (this._pendingInitPid !== undefined) {
@@ -540,6 +555,15 @@ class HeosClient {
         this._playersChangedTimer = setTimeout(() => {
           this.enqueue('heos://player/get_players')
             .then(resp => { this.players = resp.payload || []; })
+            .catch(() => {});
+        }, 500);
+        break;
+
+      case 'event/groups_changed':
+        clearTimeout(this._groupsChangedTimer);
+        this._groupsChangedTimer = setTimeout(() => {
+          this.enqueue('heos://group/get_groups')
+            .then(resp => { this.groups = resp.payload || []; })
             .catch(() => {});
         }, 500);
         break;
