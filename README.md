@@ -8,6 +8,7 @@ A [VSDinside StreamDock](https://www.vsdinside.com/) plugin that controls Denon 
 - **Play / Pause** — toggle playback, button state syncs with speaker
 - **Next / Previous Track** — skip forward or back
 - **Mute Toggle** — button state reflects current mute status
+- **Play Preset** — one-touch launch of HEOS Favorites (configurable preset number per button)
 
 **Volume Control (rotary knob)**
 - Rotate to adjust volume with adaptive speed scaling (slow = fine, fast = coarse)
@@ -15,11 +16,16 @@ A [VSDinside StreamDock](https://www.vsdinside.com/) plugin that controls Denon 
 - Debounced command batching prevents HEOS queue overflow during rapid rotation
 - Display shows current volume level ("Vol: 42") or "MUTE"
 
+**Settings UI (Property Inspector)**
+- Enter speaker IP and discover players automatically
+- Player dropdown shows name, model, and group membership
+- Per-button preset number configuration
+- Optional HEOS account sign-in for streaming service presets
+
 **General**
 - Automatic connection and reconnection to HEOS speaker over TCP
 - Real-time state sync — changes from the HEOS app or other controllers update the StreamDock immediately
 - Heartbeat keep-alive prevents connection timeouts
-- Configurable speaker IP and player ID via global settings
 
 ## Prerequisites
 
@@ -65,7 +71,7 @@ Copy the entire `com.vsd.craft.heos.sdPlugin` folder into the plugins directory,
 
 1. Open VSD Craft and drag a HEOS action onto a button or knob
 2. Open the Property Inspector and enter your HEOS speaker's IP address
-3. Select your player from the dropdown (or enter the player ID manually)
+3. Click **Connect & Discover** and select your player from the dropdown
 
 To find your speaker's IP: open the HEOS app, go to **Settings > My Devices**, select your speaker, then **Advanced** to see the IP address.
 
@@ -87,7 +93,7 @@ StreamDock Device --> VSD Craft (WebSocket) --> Plugin (Node.js) --> HEOS Speake
 
 - `src/index.js` — WebSocket connection to VSD Craft, event dispatch, global settings
 - `src/heos-client.js` — TCP connection to HEOS, serialized command queue, response parser, event routing
-- `src/actions/` — one module per action (play-pause, next-prev, mute, volume)
+- `src/actions/` — one module per action (play-pause, next-prev, mute, volume, preset)
 
 ## Roadmap
 
@@ -96,8 +102,8 @@ See [`docs/plans/00-SUMMARY.md`](docs/plans/00-SUMMARY.md) for the full plan.
 - [x] Phase 1 — Skeleton & Infrastructure
 - [x] Phase 2 — Core Playback Actions
 - [x] Phase 3 — Volume Knob
-- [ ] Phase 4 — Preset Buttons (HEOS Favorites)
-- [ ] Phase 5 — Property Inspector (settings UI)
+- [x] Phase 4 — Preset Buttons (HEOS Favorites)
+- [x] Phase 5 — Property Inspector (settings UI)
 - [ ] Phase 6 — Resilience & Polish
 
 ## License

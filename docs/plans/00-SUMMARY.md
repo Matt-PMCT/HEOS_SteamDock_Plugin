@@ -48,7 +48,7 @@ com.vsd.craft.heos.sdPlugin/
   manifest.json               # Phase 1 (full manifest from preliminary doc 05)
   plugin/index.js             # ncc bundled output (gitignored, built by ncc)
   property-inspector/
-    index.html                # Basic version exists (IP + player ID fields); Phase 5 expands
+    index.html                # Full settings UI: connection, player discovery, preset config, account sign-in
   images/                     # Placeholder Phase 1, production Phase 6
 ```
 

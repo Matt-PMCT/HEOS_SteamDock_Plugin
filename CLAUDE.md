@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 VSDinside StreamDock plugin that controls Denon HEOS speakers from physical buttons and rotary knobs (MagTran M3 and other StreamDock devices). Node.js 20.8.1 backend communicating with HEOS speakers over TCP port 1255.
 
-**Status:** Phases 1-3 complete. Infrastructure (WebSocket, TCP, command queue), core playback actions (play/pause, next/prev, mute), and volume knob control are implemented. Next: Phase 4 (preset buttons). See `docs/plans/00-SUMMARY.md` for the full roadmap.
+**Status:** Phases 1-5 complete. Infrastructure, core playback, volume knob, preset buttons, and Property Inspector settings UI are all implemented. Next: Phase 6 (resilience & polish). See `docs/plans/00-SUMMARY.md` for the full roadmap.
 
 ## Build Commands
 
@@ -69,3 +69,4 @@ These are non-obvious constraints that cause hard-to-debug failures:
 - **Global settings** for speaker IP and player ID (shared across all action instances). Per-action settings only for action-specific config (e.g., preset number).
 - **All 6 actions defined in manifest from Phase 1** to avoid manifest churn across phases.
 - **Volume debounce pattern:** Rapid `dialRotate` ticks are accumulated and flushed via a 50ms trailing-edge debounce timer, not sent individually. `enqueueVolume()` replaces stale `set_volume` commands in the queue so only the latest target is sent. Replaced commands are rejected (not resolved) so callers can distinguish them from real errors.
+- **PI communication:** Property Inspector sends commands to the plugin via `sendToPlugin` with a `payload.command` field (`getStatus`, `connect`, `selectPlayer`, `signIn`). Plugin responds via `sendToPropertyInspector`. The plugin is the sole authority for saving global settings on player selection -- the PI must NOT also call `setGlobalSettings` to avoid duplicate/racing writes. The `setGlobalSettings` wrapper eagerly updates the local `globalSettings` variable to prevent stale-spread races when multiple settings writes happen in sequence.
