@@ -2,6 +2,7 @@ module.exports = {
   actionUUID: 'com.vsd.craft.heos.preset',
 
   onKeyDown(message, { heosClient, vsd }) {
+    if (!heosClient.isConnected()) { vsd.showAlert(message.context); return; }
     const pid = heosClient.playerId;
     if (pid == null) { vsd.showAlert(message.context); return; }
 
@@ -17,7 +18,7 @@ module.exports = {
       .then(() => vsd.showOk(message.context))
       .catch((err) => {
         if (err.message && err.message.includes('HEOS error 8')) {
-          console.warn('[HEOS] Preset requires HEOS account sign-in');
+          console.warn('[HEOS-Client] Preset requires HEOS account sign-in');
         }
         vsd.showAlert(message.context);
       });

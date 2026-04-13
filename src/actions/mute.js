@@ -2,6 +2,7 @@ module.exports = {
   actionUUID: 'com.vsd.craft.heos.mute',
 
   onKeyDown(message, { heosClient, vsd }) {
+    if (!heosClient.isConnected()) { vsd.showAlert(message.context); return; }
     const pid = heosClient.playerId;
     if (pid == null) { vsd.showAlert(message.context); return; }
 

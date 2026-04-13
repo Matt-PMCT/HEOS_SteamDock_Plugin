@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const { HeosClient, parseHeosMessage } = require('./heos-client');
+const { HeosClient, ConnectionState, parseHeosMessage } = require('./heos-client');
 const playPause = require('./actions/play-pause');
 const nextPrev = require('./actions/next-prev');
 const mute = require('./actions/mute');
@@ -213,6 +213,7 @@ function dispatchEvent(message) {
     }
 
     case 'systemDidWakeUp':
+      console.log('[HEOS-Plugin] System woke up, reconnecting...');
       heosClient.reconnect();
       break;
 
@@ -221,15 +222,15 @@ function dispatchEvent(message) {
       break;
 
     case 'propertyInspectorDidAppear':
-      console.log('[Plugin] PI appeared for', action);
+      console.log('[HEOS-Plugin] PI appeared for', action);
       break;
 
     case 'propertyInspectorDidDisappear':
-      console.log('[Plugin] PI disappeared for', action);
+      console.log('[HEOS-Plugin] PI disappeared for', action);
       break;
 
     default:
-      console.log('[Plugin] Unknown event:', event);
+      console.log('[HEOS-Plugin] Unknown event:', event);
       break;
   }
 }
@@ -240,7 +241,7 @@ function connectToVsdCraft(args) {
   ws = new WebSocket('ws://127.0.0.1:' + args.port);
 
   ws.on('open', () => {
-    console.log('[Plugin] Connected to VSD Craft');
+    console.log('[HEOS-Plugin] Connected to VSD Craft');
     // Register the plugin
     ws.send(JSON.stringify({
       event: args.registerEvent,
@@ -255,17 +256,17 @@ function connectToVsdCraft(args) {
       const message = JSON.parse(data.toString());
       dispatchEvent(message);
     } catch (e) {
-      console.error('[Plugin] Failed to parse message:', e.message);
+      console.error('[HEOS-Plugin] Failed to parse message:', e.message);
     }
   });
 
   ws.on('close', () => {
-    console.log('[Plugin] WebSocket closed, exiting');
+    console.log('[HEOS-Plugin] WebSocket closed, exiting');
     process.exit(0);
   });
 
   ws.on('error', (err) => {
-    console.error('[Plugin] WebSocket error:', err.message);
+    console.error('[HEOS-Plugin] WebSocket error:', err.message);
     process.exit(1);
   });
 }
@@ -275,8 +276,33 @@ function connectToVsdCraft(args) {
 const args = parseArgs();
 pluginUUID = args.pluginUUID;
 heosClient = new HeosClient(onHeosEvent);
-heosClient.onInitComplete = savePIDiscoveryData;
+heosClient.onInitComplete = () => {
+  savePIDiscoveryData();
+  // Refresh all button displays after init (player state is now current)
+  for (const [ctx, info] of contextMap) {
+    const handler = handlers[info.action];
+    if (handler && handler.onWillAppear) {
+      handler.onWillAppear(
+        { context: ctx, action: info.action, payload: { settings: info.settings } },
+        { heosClient, vsd }
+      );
+    }
+  }
+};
 heosClient.onInitError = savePIError;
+
+// Connection state listener: alert buttons on disconnect, refresh on reconnect
+heosClient.onStateChange((newState, oldState) => {
+  if (newState === ConnectionState.DISCONNECTED || newState === ConnectionState.RECONNECTING) {
+    for (const [ctx] of contextMap) {
+      vsd.showAlert(ctx);
+    }
+  }
+
+  // Button refresh happens in onInitComplete (after player state is polled),
+  // not here, to avoid displaying stale state.
+});
+
 connectToVsdCraft(args);
 
 // --- Exports (for action handlers in later phases) ---

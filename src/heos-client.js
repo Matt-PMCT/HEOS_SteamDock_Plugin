@@ -43,7 +43,7 @@ class ResponseParser {
         messages.push(JSON.parse(line));
       } catch (e) {
         // Skip ONLY this bad line. Do NOT flush the buffer.
-        console.error('[HEOS] Failed to parse:', line.substring(0, 100));
+        console.error('[HEOS-Client] Failed to parse:', line.substring(0, 100));
       }
     }
     return messages;
@@ -54,6 +54,15 @@ class ResponseParser {
   }
 }
 
+// --- Connection States ---
+
+const ConnectionState = {
+  DISCONNECTED: 'disconnected',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  RECONNECTING: 'reconnecting'
+};
+
 // --- HEOS Client ---
 
 class HeosClient {
@@ -62,12 +71,13 @@ class HeosClient {
     this.parser = new ResponseParser();
     this.queue = [];          // [{ command, resolve, reject, timeoutId, retries, enqueuedAt, matchKey }]
     this.pending = null;      // Currently in-flight command entry (or null)
-    this.connected = false;
-    this.connecting = false;
+    this.state = ConnectionState.DISCONNECTED;
+    this.stateListeners = [];
     this.ip = null;
     this.heartbeatTimer = null;
     this.reconnectTimer = null;
     this.reconnectDelay = 1000;
+    this.reconnectAttempts = 0;
     this._retryTimer = null;
     this._retryEntry = null;       // Entry in-limbo during retry delay
     this.eventCallback = eventCallback;
@@ -92,6 +102,7 @@ class HeosClient {
     this._playersChangedTimer = null;
     this._groupsChangedTimer = null;
     this._userChangedTimer = null;
+    this._sourcesChangedTimer = null;
 
     // Init promise (resolved when init sequence completes)
     this.initPromise = Promise.resolve();
@@ -99,31 +110,60 @@ class HeosClient {
     this._initReject = null;
   }
 
+  // --- Connection State Machine ---
+
+  onStateChange(listener) {
+    this.stateListeners.push(listener);
+  }
+
+  _setState(newState) {
+    const old = this.state;
+    this.state = newState;
+    if (old !== newState) {
+      for (const fn of this.stateListeners) {
+        try { fn(newState, old); } catch (e) { console.error('[HEOS-Client] State listener error:', e); }
+      }
+    }
+  }
+
   // --- TCP Connection Lifecycle ---
 
   connect(ip) {
     // Validate IPv4 format
     if (!ip || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
-      console.error('[HEOS] Invalid IP address:', ip);
+      console.error('[HEOS-Client] Invalid IP address:', ip);
       return;
     }
     const octets = ip.split('.').map(Number);
     if (octets.some(o => o < 0 || o > 255)) {
-      console.error('[HEOS] Invalid IP address (octet out of range):', ip);
+      console.error('[HEOS-Client] Invalid IP address (octet out of range):', ip);
       return;
     }
 
     // Guard: already connected to this IP
-    if (this.connected && this.ip === ip) return;
+    if (this.state === ConnectionState.CONNECTED && this.ip === ip) return;
     // Guard: already connecting
-    if (this.connecting && this.ip === ip) return;
+    if (this.state === ConnectionState.CONNECTING && this.ip === ip) return;
 
     // If connected/connecting to a DIFFERENT IP, disconnect first
-    if (this.connected || this.connecting) {
+    if (this.state === ConnectionState.CONNECTED || this.state === ConnectionState.CONNECTING) {
       this.disconnect();
     }
 
-    this.connecting = true;
+    // Clear any pending reconnect timer (e.g. called from didReceiveGlobalSettings during RECONNECTING)
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    // Clean up any leftover destroyed socket (e.g. from RECONNECTING state)
+    if (this.socket) {
+      this.socket.removeAllListeners();
+      this.socket.destroy();
+      this.socket = null;
+    }
+
+    this._setState(ConnectionState.CONNECTING);
     this.ip = ip;
     this.parser.reset();
 
@@ -137,11 +177,11 @@ class HeosClient {
     this.socket.setTimeout(5000); // Connection timeout
 
     this.socket.on('connect', () => {
-      console.log('[HEOS] Connected to', ip);
-      this.connected = true;
-      this.connecting = false;
+      console.log('[HEOS-Client] Connected to', ip);
+      this._setState(ConnectionState.CONNECTED);
       this.socket.setTimeout(0); // Clear connection timeout; heartbeat handles idle detection
       this.reconnectDelay = 1000; // Reset backoff
+      this.reconnectAttempts = 0;
       this.startHeartbeat();
       this.sendNext(); // Drain any queued commands
 
@@ -157,14 +197,13 @@ class HeosClient {
     });
 
     this.socket.on('error', (err) => {
-      console.error('[HEOS] Socket error:', err.message);
+      console.error('[HEOS-Client] Socket error:', err.message);
       // Do NOT reconnect here -- the close event follows
     });
 
     this.socket.on('close', () => {
-      console.log('[HEOS] Connection closed');
-      this.connected = false;
-      this.connecting = false;
+      console.log('[HEOS-Client] Connection closed');
+      this._setState(ConnectionState.DISCONNECTED);
       this.stopHeartbeat();
       this.rejectPending('Connection closed');
 
@@ -179,7 +218,7 @@ class HeosClient {
     });
 
     this.socket.on('timeout', () => {
-      console.error('[HEOS] Connection timeout');
+      console.error('[HEOS-Client] Connection timeout');
       this.socket.destroy();
     });
 
@@ -210,6 +249,10 @@ class HeosClient {
       clearTimeout(this._userChangedTimer);
       this._userChangedTimer = null;
     }
+    if (this._sourcesChangedTimer) {
+      clearTimeout(this._sourcesChangedTimer);
+      this._sourcesChangedTimer = null;
+    }
     if (this._retryEntry) {
       this._retryEntry.reject(new Error('Disconnected'));
       this._retryEntry = null;
@@ -219,8 +262,7 @@ class HeosClient {
       this.socket.destroy();
       this.socket = null;
     }
-    this.connected = false;
-    this.connecting = false;
+    this._setState(ConnectionState.DISCONNECTED);
 
     // Reject init promise if still pending
     if (this._initReject) {
@@ -243,14 +285,73 @@ class HeosClient {
   reconnect() {
     if (!this.ip) return;
     const ip = this.ip;
-    this.disconnect();
+
+    // Clear reconnect scheduling
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.reconnectDelay = 1000;
+    this.reconnectAttempts = 0;
+
+    // Teardown socket without triggering close handler's scheduleReconnect
+    this.stopHeartbeat();
+    this._initRunning = false;
+    this._pendingInitPid = undefined;
+    if (this._retryTimer) {
+      clearTimeout(this._retryTimer);
+      this._retryTimer = null;
+    }
+    if (this._retryEntry) {
+      this._retryEntry.reject(new Error('Reconnecting'));
+      this._retryEntry = null;
+    }
+    // Clear event debounce timers to prevent stale commands buffering
+    if (this._playersChangedTimer) { clearTimeout(this._playersChangedTimer); this._playersChangedTimer = null; }
+    if (this._groupsChangedTimer) { clearTimeout(this._groupsChangedTimer); this._groupsChangedTimer = null; }
+    if (this._userChangedTimer) { clearTimeout(this._userChangedTimer); this._userChangedTimer = null; }
+    if (this._sourcesChangedTimer) { clearTimeout(this._sourcesChangedTimer); this._sourcesChangedTimer = null; }
+    if (this.socket) {
+      this.socket.removeAllListeners(); // Prevent close handler double-reconnecting
+      this.socket.destroy();
+      this.socket = null;
+    }
+    this.parser.reset();
+
+    // Reject pending and queued commands (they may reference stale player state)
+    this.rejectPending('Reconnecting');
+    for (const entry of this.queue) {
+      clearTimeout(entry.timeoutId);
+      entry.reject(new Error('Reconnecting'));
+    }
+    this.queue = [];
+
+    // Reject init promise if still pending
+    if (this._initReject) {
+      this._initReject(new Error('Reconnecting'));
+      this._initResolve = null;
+      this._initReject = null;
+    }
+
+    // Go directly to connect() -- avoid intermediate DISCONNECTED state
+    // which would flash alerts on buttons unnecessarily
+    this.state = ConnectionState.DISCONNECTED; // Set without notifying listeners
     this.connect(ip);
   }
 
   scheduleReconnect() {
     if (this.reconnectTimer) return;   // already scheduled
     if (!this.ip) return;              // no IP configured
-    console.log('[HEOS] Reconnecting in', this.reconnectDelay, 'ms');
+    if (this.state === ConnectionState.CONNECTED) return; // already connected
+
+    this._setState(ConnectionState.RECONNECTING);
+    this.reconnectAttempts++;
+
+    if (this.reconnectAttempts === 10) {
+      console.warn('[HEOS-Client] 10 failed reconnection attempts. Speaker IP may have changed (DHCP). Check IP in Property Inspector.');
+    }
+
+    console.log(`[HEOS-Client] Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect(this.ip);
@@ -259,7 +360,7 @@ class HeosClient {
   }
 
   isConnected() {
-    return this.connected;
+    return this.state === ConnectionState.CONNECTED;
   }
 
   // --- Heartbeat ---
@@ -292,7 +393,7 @@ class HeosClient {
         matchKey: null
       };
       this.queue.push(entry);
-      if (this.pending === null && this.connected) {
+      if (this.pending === null && this.state === ConnectionState.CONNECTED) {
         this.sendNext();
       }
     });
@@ -301,7 +402,7 @@ class HeosClient {
   sendNext() {
     if (this.queue.length === 0) return;
     if (this.pending !== null) return;   // still waiting for response
-    if (!this.connected) return;         // commands buffer until reconnect
+    if (this.state !== ConnectionState.CONNECTED) return; // commands buffer until reconnect
 
     // Drop stale commands (queued > 30s ago)
     const now = Date.now();
@@ -321,7 +422,7 @@ class HeosClient {
     // Write to socket
     this.socket.write(this.pending.command + '\r\n', (err) => {
       if (err) {
-        console.error('[HEOS] Write error:', err.message);
+        console.error('[HEOS-Client] Write error:', err.message);
         // Socket error/close handlers will reject pending and schedule reconnect
       }
     });
@@ -339,7 +440,7 @@ class HeosClient {
 
   routeMessage(msg) {
     if (!msg || !msg.heos || !msg.heos.command) {
-      console.error('[HEOS] Malformed message:', JSON.stringify(msg));
+      console.error('[HEOS-Client] Malformed message:', JSON.stringify(msg));
       return;
     }
 
@@ -374,12 +475,12 @@ class HeosClient {
 
   resolveQueuedCommand(msg) {
     if (!this.pending) {
-      console.warn('[HEOS] Orphaned response (no pending command):', msg.heos.command);
+      console.warn('[HEOS-Client] Orphaned response (no pending command):', msg.heos.command);
       return;
     }
     if (msg.heos.command !== this.pending.matchKey) {
       // Log at error level -- mismatch means queue is blocked until 5s timeout
-      console.error('[HEOS] Response mismatch:', msg.heos.command, '!=', this.pending.matchKey);
+      console.error('[HEOS-Client] Response mismatch:', msg.heos.command, '!=', this.pending.matchKey);
       return;
     }
 
@@ -398,7 +499,7 @@ class HeosClient {
         const retryTimer = setTimeout(() => {
           this._retryTimer = null;
           this._retryEntry = null;
-          if (!this.connected) {
+          if (this.state !== ConnectionState.CONNECTED) {
             entry.reject(new Error('Disconnected during retry'));
             return;
           }
@@ -445,7 +546,7 @@ class HeosClient {
       this.signedIn = accountMsg.signed_in === 'true' || !!accountMsg.un;
 
       if (!this.signedIn) {
-        console.warn('[HEOS] Not signed in. Streaming presets require sign-in via Property Inspector.');
+        console.warn('[HEOS-Client] Not signed in. Streaming presets require sign-in via Property Inspector.');
       }
 
       // 3. Get all players
@@ -454,12 +555,12 @@ class HeosClient {
 
       // 3b. Retry once after 2s if empty (CLI module may still be spinning up)
       if (this.players.length === 0) {
-        console.warn('[HEOS] No players found. Retrying after 2s delay...');
+        console.warn('[HEOS-Client] No players found. Retrying after 2s delay...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         const retryResp = await this.enqueue('heos://player/get_players');
         this.players = retryResp.payload || [];
         if (this.players.length === 0) {
-          console.warn('[HEOS] Still no players found. User may need to check network.');
+          console.warn('[HEOS-Client] Still no players found. User may need to check network.');
         }
       }
 
@@ -481,7 +582,7 @@ class HeosClient {
       // 5. Register for change events
       await this.enqueue('heos://system/register_for_change_events?enable=on');
 
-      console.log('[HEOS] Init sequence complete. Player:', this.playerId, 'State:', this.playerState.playState);
+      console.log('[HEOS-Client] Init sequence complete. Player:', this.playerId, 'State:', this.playerState.playState);
       // Resolve init promise on success
       if (this._initResolve) {
         this._initResolve();
@@ -490,7 +591,7 @@ class HeosClient {
       }
       if (this.onInitComplete) this.onInitComplete();
     } catch (err) {
-      console.error('[HEOS] Init sequence failed:', err.message);
+      console.error('[HEOS-Client] Init sequence failed:', err.message);
       // Reject init promise so callers know it failed
       if (this._initReject) {
         this._initReject(err);
@@ -573,7 +674,7 @@ class HeosClient {
         break;
 
       case 'event/player_playback_error':
-        console.error('[HEOS] Playback error for player:', pid);
+        console.error('[HEOS-Client] Playback error for player:', pid);
         this.playerState.playState = 'stop';
         break;
 
@@ -586,6 +687,13 @@ class HeosClient {
               this.signedIn = accountMsg.signed_in === 'true' || !!accountMsg.un;
             })
             .catch(() => {});
+        }, 500);
+        break;
+
+      case 'event/sources_changed':
+        clearTimeout(this._sourcesChangedTimer);
+        this._sourcesChangedTimer = setTimeout(() => {
+          // Debounced -- no action needed currently, but prevents burst event flooding
         }, 500);
         break;
     }
@@ -622,4 +730,4 @@ class HeosClient {
   }
 }
 
-module.exports = { HeosClient, parseHeosMessage, heosEncode };
+module.exports = { HeosClient, ConnectionState, parseHeosMessage, heosEncode };

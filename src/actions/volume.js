@@ -22,6 +22,7 @@ module.exports = {
   },
 
   onDialRotate(message, { heosClient, vsd }) {
+    if (!heosClient.isConnected()) return; // State listener already shows alert
     const pid = heosClient.playerId;
     if (pid == null) { vsd.showAlert(message.context); return; }
 
@@ -51,6 +52,11 @@ module.exports = {
     const state = this._state.get(context);
     if (state.pendingDelta === 0) return;
 
+    if (!heosClient.isConnected()) {
+      state.pendingDelta = 0;
+      vsd.showAlert(context);
+      return;
+    }
     const pid = heosClient.playerId;
     if (pid == null) {
       state.pendingDelta = 0;
@@ -84,6 +90,7 @@ module.exports = {
   },
 
   onDialDown(message, { heosClient, vsd }) {
+    if (!heosClient.isConnected()) { vsd.showAlert(message.context); return; }
     const pid = heosClient.playerId;
     if (pid == null) { vsd.showAlert(message.context); return; }
 

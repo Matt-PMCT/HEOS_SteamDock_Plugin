@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 VSDinside StreamDock plugin that controls Denon HEOS speakers from physical buttons and rotary knobs (MagTran M3 and other StreamDock devices). Node.js 20.8.1 backend communicating with HEOS speakers over TCP port 1255.
 
-**Status:** Phases 1-5 complete. Infrastructure, core playback, volume knob, preset buttons, and Property Inspector settings UI are all implemented. Next: Phase 6 (resilience & polish). See `docs/plans/00-SUMMARY.md` for the full roadmap.
+**Status:** Phases 1-6 complete. Infrastructure, core playback, volume knob, preset buttons, Property Inspector settings UI, and resilience & polish are all implemented. Next: Phase 7 (future enhancements). See `docs/plans/00-SUMMARY.md` for the full roadmap.
 
 ## Build Commands
 

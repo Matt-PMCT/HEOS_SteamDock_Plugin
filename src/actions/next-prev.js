@@ -2,6 +2,7 @@ module.exports = {
   actionUUIDs: ['com.vsd.craft.heos.next', 'com.vsd.craft.heos.previous'],
 
   onKeyDown(message, { heosClient, vsd }) {
+    if (!heosClient.isConnected()) { vsd.showAlert(message.context); return; }
     const pid = heosClient.playerId;
     if (pid == null) { vsd.showAlert(message.context); return; }
 
