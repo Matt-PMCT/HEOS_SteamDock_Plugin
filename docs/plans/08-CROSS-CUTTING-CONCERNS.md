@@ -102,7 +102,7 @@ HEOS closes idle connections. Send `heos://system/heart_beat` every 30 seconds t
 
 ### DHCP and Speaker IP Changes
 
-If the HEOS speaker's IP changes (DHCP lease renewal), the plugin will retry the old IP indefinitely. Known limitation: after 10 failed reconnects, log a warning. SSDP auto-discovery (Phase 7) would solve this. Users must update the IP via the Property Inspector.
+If the HEOS speaker's IP changes (DHCP lease renewal), the plugin will retry the old IP indefinitely. Known limitation: after 10 failed reconnects, log a warning. Users can use SSDP auto-discovery ("Find Speakers" in the Property Inspector) to locate the speaker at its new IP, or update the IP manually.
 
 ### Error 13 and Error 16
 

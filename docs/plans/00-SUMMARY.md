@@ -35,21 +35,28 @@ heos-plugin/
   .github/workflows/
     release.yml               # On v* tag: build, package, create GitHub Release
   src/
-    index.js                  # WebSocket registration, event dispatch
+    index.js                  # WebSocket registration, event dispatch, SSDP trigger
     heos-client.js            # TCP connection, command queue, parser, events
+    image-utils.js            # HTTP image fetch, base64 encoding, SVG album art
+    ssdp-discovery.js         # UDP multicast SSDP auto-discovery
     actions/
-      play-pause.js           # Phase 2
-      volume.js               # Phase 3
-      mute.js                 # Phase 2
-      next-prev.js            # Phase 2
-      preset.js               # Phase 4
+      play-pause.js           # Play/pause toggle, now-playing title, album art
+      volume.js               # Player volume knob with debounce
+      mute.js                 # Mute toggle
+      next-prev.js            # Next/previous track
+      preset.js               # HEOS Favorites preset
+      group-preset.js         # Speaker group preset
+      play-mode.js            # Repeat and shuffle toggles
+      group-volume.js         # Group volume knob with debounce
+      input-select.js         # AVR input source selection
+      profile-switch.js       # Speaker profile switching
 
 com.vsd.craft.heos.sdPlugin/
-  manifest.json               # Phase 1 (full manifest from preliminary doc 05)
+  manifest.json               # 12 actions: 10 button + 2 knob
   plugin/index.js             # ncc bundled output (gitignored, built by ncc)
   property-inspector/
-    index.html                # Full settings UI: connection, player discovery, preset config, account sign-in
-  images/                     # Placeholder Phase 1, production Phase 6
+    index.html                # Settings UI: connection, discovery, player, profiles, per-action config
+  images/                     # Action icons (40x40 PNG)
 ```
 
 ## Cross-Cutting Concerns

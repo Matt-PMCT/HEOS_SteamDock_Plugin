@@ -2,6 +2,10 @@
 
 > [Back to Summary](./00-SUMMARY.md) | Prev: [Phase 6](./06-RESILIENCE-AND-POLISH.md) | See also: [Cross-Cutting Concerns](./08-CROSS-CUTTING-CONCERNS.md)
 
+## Status
+
+**All enhancements implemented** in v1.0.0. This document is preserved as the original design specification. See the source files referenced in each section for the final implementation.
+
 ## Objective
 
 Catalog of deferred features that add value but are not required for the core plugin. Each enhancement is independent and can be implemented in any order. This serves as a backlog specification.
@@ -160,10 +164,22 @@ function discoverHeosSpeakers(timeoutMs = 5000) {
 
 ## Verification (per enhancement)
 
-1. **Album art:** Play track with art, verify on button
+1. **Album art:** Play track with art, verify on button -- optionally disabled per-button via PI toggle
 2. **SSDP:** Click Discover, speaker appears without manual IP
 3. **Group volume:** Create group, assign knob, verify control
-4. **Input select:** On AVR, switch HDMI to Bluetooth via button
+4. **Input select:** On AVR, switch HDMI to Bluetooth via button -- PI filters to hardware inputs
 5. **Repeat/shuffle:** Cycle modes, verify speaker + button sync
 6. **Profiles:** Save two profiles, switch, correct speaker responds
 7. **Now-playing:** Different tracks, title updates within 2s
+
+## Implementation Notes
+
+All enhancements were implemented with the following refinements beyond the original spec:
+
+- **Album art** is optional per play/pause button via a `showAlbumArt` toggle in the Property Inspector (defaults to on). The image cache keys on both URL and title to avoid stale SVG overlays when the title changes for the same album art.
+- **SSDP discovery** sends the M-SEARCH twice (at 0s and 1s) for reliability. PI clears persisted discovery results from global settings after displaying them to prevent re-display on every settings update.
+- **Group volume** stores a resolved GID per-context to handle the debounce flush correctly when the message reference is stale. Event handler falls back to existing groupState mute value when `mute` parameter is missing from the event.
+- **Input select** uses `heosEncode()` for safe HEOS command encoding. PI filters sources to hardware inputs (aux, hdmi, optical, analog, coax, bluetooth, tv) with fallback to all sources if no hardware inputs are found.
+- **Repeat/shuffle** uses optimistic state update before enqueue to prevent UI flicker on rapid double-press.
+- **Speaker profiles** are stored in global settings as `profiles: [{ id, name, ip, playerId }]`. Switching updates `heosIp`/`playerId` which triggers existing IP-change reconnection flow -- no connection lifecycle changes were needed.
+- **Group preset** was added as an additional enhancement (not in original spec) for one-button speaker grouping/ungrouping.
