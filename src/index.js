@@ -1,5 +1,5 @@
 const WebSocket = require('ws');
-const { HeosClient, parseHeosMessage, heosEncode } = require('./heos-client');
+const { HeosClient, parseHeosMessage } = require('./heos-client');
 const playPause = require('./actions/play-pause');
 const nextPrev = require('./actions/next-prev');
 const mute = require('./actions/mute');
@@ -68,7 +68,6 @@ function showAlert(context) {
 }
 
 function setGlobalSettings(payload) {
-  globalSettings = payload; // Update local copy eagerly to avoid stale-spread races
   send({ event: 'setGlobalSettings', context: pluginUUID, payload });
 }
 
@@ -124,110 +123,26 @@ function onHeosEvent(msg) {
   }
 }
 
-// --- Property Inspector Message Handler ---
+// --- PI Discovery Data (saved to global settings for PI to read) ---
 
-function handlePIMessage(message) {
-  const payload = message.payload;
-  const action = message.action;
-  const context = message.context;
+function savePIDiscoveryData() {
+  globalSettings = {
+    ...globalSettings,
+    _piPlayers: heosClient.players.map(p => ({ pid: p.pid, name: p.name, model: p.model })),
+    _piGroups: heosClient.groups.map(g => ({ name: g.name, pids: (g.players || []).map(p => p.pid) })),
+    _piSignedIn: heosClient.signedIn,
+    _piError: null
+  };
+  setGlobalSettings(globalSettings);
+}
 
-  switch (payload.command) {
-    case 'getStatus':
-      sendToPropertyInspector(action, context, {
-        type: 'status',
-        connected: heosClient.isConnected(),
-        players: heosClient.players,
-        groups: heosClient.groups,
-        selectedPid: heosClient.playerId,
-        signedIn: heosClient.signedIn
-      });
-      break;
-
-    case 'connect': {
-      const ip = payload.ip;
-      // Validate IP format before attempting connection
-      if (!ip || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
-        sendToPropertyInspector(action, context, {
-          type: 'error',
-          message: 'Invalid IP address format'
-        });
-        break;
-      }
-      const octets = ip.split('.').map(Number);
-      if (octets.some(o => o < 0 || o > 255)) {
-        sendToPropertyInspector(action, context, {
-          type: 'error',
-          message: 'Invalid IP address (octet out of range)'
-        });
-        break;
-      }
-      // If already connected to this IP, respond immediately with current data
-      if (heosClient.isConnected() && heosClient.ip === ip) {
-        sendToPropertyInspector(action, context, {
-          type: 'connectResult',
-          success: true,
-          players: heosClient.players,
-          groups: heosClient.groups
-        });
-        break;
-      }
-      // Connect first, save IP to global settings only after initPromise settles
-      heosClient.connect(ip);
-      heosClient.initPromise
-        .then(() => {
-          setGlobalSettings({ ...globalSettings, heosIp: ip });
-          sendToPropertyInspector(action, context, {
-            type: 'connectResult',
-            success: true,
-            players: heosClient.players,
-            groups: heosClient.groups
-          });
-        })
-        .catch((err) => {
-          sendToPropertyInspector(action, context, {
-            type: 'error',
-            message: 'Connection failed: ' + err.message
-          });
-        });
-      break;
-    }
-
-    case 'selectPlayer': {
-      const pid = parseInt(payload.pid, 10);
-      heosClient.playerId = pid;
-      const player = heosClient.players.find(p => p.pid === pid);
-      setGlobalSettings({
-        ...globalSettings,
-        playerId: String(pid),
-        playerName: player ? player.name : 'Unknown'
-      });
-      heosClient.pollPlayerState(pid).catch(() => {});
-      break;
-    }
-
-    case 'signIn':
-      heosClient.enqueue(
-        `heos://system/sign_in?un=${heosEncode(payload.username)}&pw=${heosEncode(payload.password)}`
-      ).then((resp) => {
-        const success = resp.heos.result === 'success';
-        heosClient.signedIn = success;
-        if (success) {
-          setGlobalSettings({ ...globalSettings, heosUsername: payload.username });
-        }
-        sendToPropertyInspector(action, context, {
-          type: 'signInResult',
-          success,
-          username: success ? payload.username : null
-        });
-      }).catch(() => {
-        sendToPropertyInspector(action, context, {
-          type: 'signInResult',
-          success: false,
-          username: null
-        });
-      });
-      break;
-  }
+function savePIError(message) {
+  globalSettings = {
+    ...globalSettings,
+    _piPlayers: null,
+    _piError: message
+  };
+  setGlobalSettings(globalSettings);
 }
 
 // --- Event Dispatch ---
@@ -290,6 +205,9 @@ function dispatchEvent(message) {
         heosClient.connect(globalSettings.heosIp);
       } else if (playerIdChanged && heosClient.isConnected()) {
         heosClient.runInitSequence(pid);
+      } else if (heosClient.isConnected() && heosClient.players.length > 0 && !globalSettings._piPlayers) {
+        // PI cleared _piPlayers (e.g. re-clicked Connect on same IP) -- re-publish
+        savePIDiscoveryData();
       }
       break;
     }
@@ -299,11 +217,7 @@ function dispatchEvent(message) {
       break;
 
     case 'sendToPlugin':
-      if (message.payload && message.payload.command) {
-        handlePIMessage(message);
-      } else if (handler && handler.onSendToPlugin) {
-        handler.onSendToPlugin(message, { heosClient, vsd });
-      }
+      if (handler && handler.onSendToPlugin) handler.onSendToPlugin(message, { heosClient, vsd });
       break;
 
     case 'propertyInspectorDidAppear':
@@ -361,6 +275,8 @@ function connectToVsdCraft(args) {
 const args = parseArgs();
 pluginUUID = args.pluginUUID;
 heosClient = new HeosClient(onHeosEvent);
+heosClient.onInitComplete = savePIDiscoveryData;
+heosClient.onInitError = savePIError;
 connectToVsdCraft(args);
 
 // --- Exports (for action handlers in later phases) ---

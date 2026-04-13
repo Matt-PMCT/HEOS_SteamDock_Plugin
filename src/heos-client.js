@@ -71,6 +71,8 @@ class HeosClient {
     this._retryTimer = null;
     this._retryEntry = null;       // Entry in-limbo during retry delay
     this.eventCallback = eventCallback;
+    this.onInitComplete = null; // Called after successful init with no args
+    this.onInitError = null;    // Called after failed init with error message string
 
     // Player state tracking
     this.players = [];
@@ -486,14 +488,16 @@ class HeosClient {
         this._initResolve = null;
         this._initReject = null;
       }
+      if (this.onInitComplete) this.onInitComplete();
     } catch (err) {
       console.error('[HEOS] Init sequence failed:', err.message);
-      // Reject init promise so callers (e.g. PI connect) know it failed
+      // Reject init promise so callers know it failed
       if (this._initReject) {
         this._initReject(err);
         this._initResolve = null;
         this._initReject = null;
       }
+      if (this.onInitError) this.onInitError(err.message);
     } finally {
       this._initRunning = false;
 

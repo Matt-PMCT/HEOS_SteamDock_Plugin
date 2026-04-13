@@ -47,7 +47,6 @@
     }
 
     input[type="text"],
-    input[type="password"],
     input[type="number"],
     select {
       width: 100%;
@@ -97,25 +96,6 @@
       margin-bottom: 4px;
       padding-left: 80px;
     }
-
-    details {
-      margin-top: 4px;
-    }
-
-    summary {
-      font-size: 12px;
-      color: #aaa;
-      cursor: pointer;
-      padding: 4px 0;
-    }
-
-    summary:hover {
-      color: #ccc;
-    }
-
-    details[open] summary {
-      margin-bottom: 8px;
-    }
   </style>
 </head>
 <body>
@@ -160,29 +140,16 @@
     </div>
   </div>
 
-  <!-- Section 3: Account (all actions, collapsed by default) -->
-  <div class="sdpi-heading">HEOS Account (optional)</div>
-  <div class="sdpi-wrapper" id="account-section">
-    <details>
-      <summary>Sign in for streaming service presets</summary>
+  <!-- Section 3: Account status (read-only; sign in via HEOS app) -->
+  <div id="account-section" style="display:none;">
+    <div class="sdpi-heading">HEOS Account</div>
+    <div class="sdpi-wrapper">
       <div class="sdpi-item">
-        <div class="sdpi-item-label">Username</div>
-        <input class="sdpi-item-value" type="text" id="heos-username"
-               placeholder="email@example.com" />
-      </div>
-      <div class="sdpi-item">
-        <div class="sdpi-item-label">Password</div>
-        <input class="sdpi-item-value" type="password" id="heos-password" />
-      </div>
-      <div class="sdpi-item">
-        <div class="sdpi-item-label"></div>
-        <button class="sdpi-item-value" id="btn-signin">Sign In</button>
-      </div>
-      <div class="sdpi-item" id="account-status-row" style="display:none;">
         <div class="sdpi-item-label">Account</div>
         <span class="sdpi-item-value" id="account-status"></span>
       </div>
-    </details>
+      <div class="sdpi-item-hint">Sign in via the HEOS app to access streaming service presets.</div>
+    </div>
   </div>
 
   <script>
@@ -193,6 +160,8 @@
     var currentContext = null;
     var currentSettings = {};
     var globalSettings = {};
+    var connectPending = false;
+    var connectTimer = null;
 
     // VSD Craft calls this function to initialize the Property Inspector
     function connectElgatoStreamDeckSocket(inPort, inPropertyInspectorUUID, inRegisterEvent, inInfo, inActionInfo) {
@@ -206,20 +175,16 @@
       websocket = new WebSocket('ws://127.0.0.1:' + inPort);
 
       websocket.onopen = function () {
-        // 1. Register PI with VSD Craft
         websocket.send(JSON.stringify({
           event: inRegisterEvent,
           uuid: piUUID
         }));
 
-        // 2. Request global settings (triggers didReceiveGlobalSettings)
+        // Request global settings -- triggers didReceiveGlobalSettings which populates the UI
         websocket.send(JSON.stringify({
           event: 'getGlobalSettings',
           context: piUUID
         }));
-
-        // 3. Ask plugin for current status
-        sendToPlugin({ command: 'getStatus' });
       };
 
       websocket.onmessage = function (evt) {
@@ -241,9 +206,6 @@
           currentSettings = (message.payload && message.payload.settings) || {};
           populateActionUI();
           break;
-        case 'sendToPropertyInspector':
-          handlePluginData(message.payload);
-          break;
       }
     }
 
@@ -251,7 +213,47 @@
 
     function populateGlobalUI() {
       document.getElementById('heos-ip').value = globalSettings.heosIp || '';
-      document.getElementById('heos-username').value = globalSettings.heosUsername || '';
+
+      var statusEl = document.getElementById('connection-status');
+      var players = globalSettings._piPlayers;
+      var groups = globalSettings._piGroups;
+      var selectedPid = globalSettings.playerId ? parseInt(globalSettings.playerId, 10) : null;
+
+      if (globalSettings._piError) {
+        statusEl.textContent = 'Error: ' + globalSettings._piError;
+        statusEl.style.color = '#c66';
+        connectPending = false;
+        clearTimeout(connectTimer);
+      } else if (players && players.length > 0) {
+        statusEl.textContent = 'Connected';
+        statusEl.style.color = '#6c6';
+        connectPending = false;
+        clearTimeout(connectTimer);
+        populatePlayerDropdown(players, selectedPid, groups);
+      } else if (connectPending) {
+        // Keep showing "Connecting..." while waiting for discovery data
+      } else if (globalSettings.heosIp) {
+        statusEl.textContent = 'Waiting for connection...';
+        statusEl.style.color = '';
+      } else {
+        statusEl.textContent = 'Not connected';
+        statusEl.style.color = '';
+      }
+
+      // Account status
+      var acctSection = document.getElementById('account-section');
+      var acctEl = document.getElementById('account-status');
+      if (globalSettings._piSignedIn) {
+        acctSection.style.display = '';
+        acctEl.textContent = globalSettings.heosUsername
+          ? 'Signed in as ' + globalSettings.heosUsername
+          : 'Signed in';
+        acctEl.style.color = '#6c6';
+      } else if (globalSettings.heosIp) {
+        acctSection.style.display = '';
+        acctEl.textContent = 'Not signed in';
+        acctEl.style.color = '';
+      }
     }
 
     function populateActionUI() {
@@ -261,67 +263,6 @@
         document.getElementById('preset-number').value = parseInt(currentSettings.presetNumber, 10) || 1;
       } else {
         presetSection.style.display = 'none';
-      }
-    }
-
-    // --- Plugin Data Handler ---
-
-    function handlePluginData(payload) {
-      switch (payload.type) {
-        case 'status':
-          var statusEl = document.getElementById('connection-status');
-          if (payload.connected) {
-            statusEl.textContent = 'Connected';
-            statusEl.style.color = '#6c6';
-          } else {
-            statusEl.textContent = 'Disconnected';
-            statusEl.style.color = '';
-          }
-          if (payload.players && payload.players.length > 0) {
-            populatePlayerDropdown(payload.players, payload.selectedPid, payload.groups);
-          }
-          if (payload.signedIn) {
-            var acctEl = document.getElementById('account-status');
-            var acctRow = document.getElementById('account-status-row');
-            acctRow.style.display = '';
-            acctEl.textContent = 'Signed in';
-            acctEl.style.color = '#6c6';
-          }
-          break;
-
-        case 'connectResult':
-          var statusEl = document.getElementById('connection-status');
-          if (payload.success) {
-            statusEl.textContent = 'Connected';
-            statusEl.style.color = '#6c6';
-            if (payload.players && payload.players.length > 0) {
-              populatePlayerDropdown(payload.players, null, payload.groups);
-            } else {
-              statusEl.textContent = 'Connected (no players found)';
-              statusEl.style.color = '#cc6';
-            }
-          }
-          break;
-
-        case 'error':
-          var statusEl = document.getElementById('connection-status');
-          statusEl.textContent = payload.message;
-          statusEl.style.color = '#c66';
-          break;
-
-        case 'signInResult':
-          var acctEl = document.getElementById('account-status');
-          var acctRow = document.getElementById('account-status-row');
-          acctRow.style.display = '';
-          if (payload.success) {
-            acctEl.textContent = 'Signed in as ' + payload.username;
-            acctEl.style.color = '#6c6';
-            document.getElementById('heos-password').value = '';
-          } else {
-            acctEl.textContent = 'Sign-in failed';
-            acctEl.style.color = '#c66';
-          }
-          break;
       }
     }
 
@@ -359,9 +300,9 @@
     function findGroupForPlayer(pid, groups) {
       if (!groups) return null;
       for (var i = 0; i < groups.length; i++) {
-        var members = groups[i].players || [];
-        for (var j = 0; j < members.length; j++) {
-          if (members[j].pid === pid) return groups[i].name;
+        var pids = groups[i].pids || [];
+        for (var j = 0; j < pids.length; j++) {
+          if (pids[j] === pid) return groups[i].name;
         }
       }
       return null;
@@ -375,13 +316,31 @@
       var statusEl = document.getElementById('connection-status');
       statusEl.textContent = 'Connecting...';
       statusEl.style.color = '';
-      sendToPlugin({ command: 'connect', ip: ip });
+      connectPending = true;
+      clearTimeout(connectTimer);
+      connectTimer = setTimeout(function () {
+        if (connectPending) {
+          connectPending = false;
+          statusEl.textContent = 'Connection timed out. Check IP and try again.';
+          statusEl.style.color = '#c66';
+        }
+      }, 15000);
+      // Save IP to global settings -- the plugin detects the change and connects
+      saveGlobalSettings({ heosIp: ip, _piError: null, _piPlayers: null });
     });
 
     document.getElementById('player-select').addEventListener('change', function () {
       var pid = this.value;
       if (!pid) return;
-      sendToPlugin({ command: 'selectPlayer', pid: pid });
+      var player = null;
+      var players = globalSettings._piPlayers || [];
+      for (var i = 0; i < players.length; i++) {
+        if (String(players[i].pid) === pid) { player = players[i]; break; }
+      }
+      saveGlobalSettings({
+        playerId: pid,
+        playerName: player ? player.name : 'Unknown'
+      });
     });
 
     document.getElementById('preset-number').addEventListener('change', function () {
@@ -392,22 +351,15 @@
       saveSettings({ presetNumber: num });
     });
 
-    document.getElementById('btn-signin').addEventListener('click', function () {
-      var un = document.getElementById('heos-username').value.trim();
-      var pw = document.getElementById('heos-password').value;
-      if (!un || !pw) return;
-      sendToPlugin({ command: 'signIn', username: un, password: pw });
-    });
-
     // --- Helpers ---
 
-    function sendToPlugin(payload) {
+    function saveGlobalSettings(settings) {
+      globalSettings = Object.assign({}, globalSettings, settings);
       if (!websocket || websocket.readyState !== WebSocket.OPEN) return;
       websocket.send(JSON.stringify({
-        action: currentAction,
-        event: 'sendToPlugin',
-        context: currentContext,
-        payload: payload
+        event: 'setGlobalSettings',
+        context: piUUID,
+        payload: globalSettings
       }));
     }
 
