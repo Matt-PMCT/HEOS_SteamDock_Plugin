@@ -93,8 +93,14 @@ class HeosClient {
       playState: 'stop',
       volume: 0,
       mute: false,
-      media: null
+      media: null,
+      repeatMode: 'off',
+      shuffleMode: 'off'
     };
+
+    // Group volume state: { [gid]: { volume: 0, mute: false } }
+    this.groupState = {};
+    this.musicSources = [];
 
     // Init sequence guard and debounce timers
     this._initRunning = false;
@@ -568,6 +574,10 @@ class HeosClient {
       const groupsResp = await this.enqueue('heos://group/get_groups');
       this.groups = groupsResp.payload || [];
 
+      // 3d. Get music sources (for input source selection)
+      const sourcesResp = await this.enqueue('heos://browse/get_music_sources');
+      this.musicSources = sourcesResp.payload || [];
+
       // 4. Set player ID and poll state
       if (playerId != null) {
         this.playerId = typeof playerId === 'string' ? parseInt(playerId, 10) : playerId;
@@ -616,16 +626,20 @@ class HeosClient {
     const volResp = await this.enqueue(`heos://player/get_volume?pid=${pid}`);
     const muteResp = await this.enqueue(`heos://player/get_mute?pid=${pid}`);
     const mediaResp = await this.enqueue(`heos://player/get_now_playing_media?pid=${pid}`);
+    const modeResp = await this.enqueue(`heos://player/get_play_mode?pid=${pid}`);
 
     const stateMsg = parseHeosMessage(stateResp.heos.message);
     const volMsg = parseHeosMessage(volResp.heos.message);
     const muteMsg = parseHeosMessage(muteResp.heos.message);
+    const modeMsg = parseHeosMessage(modeResp.heos.message);
 
     this.playerState = {
       playState: stateMsg.state,
       volume: parseInt(volMsg.level, 10),
       mute: muteMsg.state === 'on',
-      media: mediaResp.payload || null
+      media: mediaResp.payload || null,
+      repeatMode: modeMsg.repeat || 'off',
+      shuffleMode: modeMsg.shuffle || 'off'
     };
   }
 
@@ -651,7 +665,10 @@ class HeosClient {
 
       case 'event/player_now_playing_changed':
         this.enqueue(`heos://player/get_now_playing_media?pid=${this.playerId}`)
-          .then(resp => { this.playerState.media = resp.payload || null; })
+          .then(resp => {
+            this.playerState.media = resp.payload || null;
+            this.eventCallback({ heos: { command: 'event/_media_updated', message: '' } });
+          })
           .catch(() => {});
         break;
 
@@ -668,14 +685,39 @@ class HeosClient {
         clearTimeout(this._groupsChangedTimer);
         this._groupsChangedTimer = setTimeout(() => {
           this.enqueue('heos://group/get_groups')
-            .then(resp => { this.groups = resp.payload || []; })
+            .then(resp => {
+              this.groups = resp.payload || [];
+              // Rebuild groupState: keep entries for current groups, remove stale ones
+              const currentGids = new Set(this.groups.map(g => parseInt(g.gid, 10)));
+              for (const gid of Object.keys(this.groupState)) {
+                if (!currentGids.has(parseInt(gid, 10))) delete this.groupState[gid];
+              }
+            })
             .catch(() => {});
         }, 500);
         break;
 
+      case 'event/group_volume_changed': {
+        const gid = params.gid ? parseInt(params.gid, 10) : null;
+        if (gid !== null) {
+          if (!this.groupState[gid]) this.groupState[gid] = { volume: 0, mute: false };
+          this.groupState[gid].volume = parseInt(params.level, 10);
+          if (params.mute !== undefined) this.groupState[gid].mute = params.mute === 'on';
+        }
+        break;
+      }
+
       case 'event/player_playback_error':
         console.error('[HEOS-Client] Playback error for player:', pid);
         this.playerState.playState = 'stop';
+        break;
+
+      case 'event/repeat_mode_changed':
+        this.playerState.repeatMode = params.repeat || 'off';
+        break;
+
+      case 'event/shuffle_mode_changed':
+        this.playerState.shuffleMode = params.shuffle || 'off';
         break;
 
       case 'event/user_changed':
@@ -693,7 +735,9 @@ class HeosClient {
       case 'event/sources_changed':
         clearTimeout(this._sourcesChangedTimer);
         this._sourcesChangedTimer = setTimeout(() => {
-          // Debounced -- no action needed currently, but prevents burst event flooding
+          this.enqueue('heos://browse/get_music_sources')
+            .then(resp => { this.musicSources = resp.payload || []; })
+            .catch(() => {});
         }, 500);
         break;
     }
@@ -711,6 +755,20 @@ class HeosClient {
     this.queue = this.queue.filter(entry => {
       if (entry.command.startsWith('heos://player/set_volume?')) {
         entry.reject(new Error('Replaced by newer volume command'));
+        return false;
+      }
+      return true;
+    });
+
+    return this.enqueue(command);
+  }
+
+  enqueueGroupVolume(gid, level) {
+    const command = `heos://group/set_volume?gid=${gid}&level=${level}`;
+
+    this.queue = this.queue.filter(entry => {
+      if (entry.command.startsWith('heos://group/set_volume?')) {
+        entry.reject(new Error('Replaced by newer group volume command'));
         return false;
       }
       return true;

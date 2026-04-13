@@ -6,6 +6,11 @@ const mute = require('./actions/mute');
 const volume = require('./actions/volume');
 const preset = require('./actions/preset');
 const groupPreset = require('./actions/group-preset');
+const playMode = require('./actions/play-mode');
+const groupVolume = require('./actions/group-volume');
+const inputSelect = require('./actions/input-select');
+const profileSwitch = require('./actions/profile-switch');
+const { discoverHeosSpeakers } = require('./ssdp-discovery');
 
 // --- Module-Level State ---
 
@@ -26,6 +31,12 @@ handlers[mute.actionUUID] = mute;
 handlers[volume.actionUUID] = volume;
 handlers[preset.actionUUID] = preset;
 handlers[groupPreset.actionUUID] = groupPreset;
+for (const uuid of playMode.actionUUIDs) {
+  handlers[uuid] = playMode;
+}
+handlers[groupVolume.actionUUID] = groupVolume;
+handlers[inputSelect.actionUUID] = inputSelect;
+handlers[profileSwitch.actionUUID] = profileSwitch;
 
 // --- CLI Argument Parsing ---
 
@@ -95,6 +106,7 @@ const vsd = {
   showAlert,
   setGlobalSettings,
   requestGlobalSettings: getGlobalSettings,
+  getGlobalSettings: () => ({ ...globalSettings }),
   setSettings,
   sendToPropertyInspector
 };
@@ -119,7 +131,7 @@ function onHeosEvent(msg) {
     if (handler.onHeosEvent) {
       const contexts = getContextsForAction(uuid);
       if (contexts.length > 0) {
-        handler.onHeosEvent(eventName, params, { contexts, heosClient, vsd });
+        handler.onHeosEvent(eventName, params, { uuid, contexts, heosClient, vsd });
       }
     }
   }
@@ -131,7 +143,8 @@ function savePIDiscoveryData() {
   globalSettings = {
     ...globalSettings,
     _piPlayers: heosClient.players.map(p => ({ pid: p.pid, name: p.name, model: p.model })),
-    _piGroups: heosClient.groups.map(g => ({ name: g.name, pids: (g.players || []).map(p => p.pid) })),
+    _piGroups: heosClient.groups.map(g => ({ gid: g.gid, name: g.name, pids: (g.players || []).map(p => p.pid) })),
+    _piSources: heosClient.musicSources.map(s => ({ sid: s.sid, name: s.name, type: s.type })),
     _piSignedIn: heosClient.signedIn,
     _piError: null
   };
@@ -198,8 +211,20 @@ function dispatchEvent(message) {
       const newSettings = (message.payload && message.payload.settings) || {};
       const ipChanged = newSettings.heosIp && newSettings.heosIp !== globalSettings.heosIp;
       const playerIdChanged = newSettings.playerId !== globalSettings.playerId;
+      const discoverRequested = newSettings._discoverRequest && newSettings._discoverRequest !== globalSettings._discoverRequest;
       const pid = newSettings.playerId ? parseInt(newSettings.playerId, 10) : null;
       globalSettings = newSettings;
+
+      // SSDP discovery request from PI
+      if (discoverRequested) {
+        globalSettings._discoverRequest = null;
+        setGlobalSettings(globalSettings);
+        discoverHeosSpeakers(5000).then(results => {
+          globalSettings = { ...globalSettings, _piDiscoveryResults: results };
+          setGlobalSettings(globalSettings);
+        });
+        break;
+      }
 
       if (ipChanged || (!heosClient.isConnected() && globalSettings.heosIp)) {
         if (ipChanged) heosClient.reconnectDelay = 1000;

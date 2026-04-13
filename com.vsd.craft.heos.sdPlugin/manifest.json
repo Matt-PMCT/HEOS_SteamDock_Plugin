@@ -166,6 +166,120 @@
           "Title": "Group"
         }
       ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.repeat",
+      "Name": "Repeat Mode",
+      "Icon": "images/actions/repeat.png",
+      "Tooltip": "Cycle repeat mode: off, all, one",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "images/actions/repeat-off.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Repeat"
+        },
+        {
+          "Image": "images/actions/repeat-all.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Rep All"
+        },
+        {
+          "Image": "images/actions/repeat-one.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Rep One"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.shuffle",
+      "Name": "Shuffle",
+      "Icon": "images/actions/shuffle.png",
+      "Tooltip": "Toggle shuffle on/off",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "States": [
+        {
+          "Image": "images/actions/shuffle-off.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Shuffle"
+        },
+        {
+          "Image": "images/actions/shuffle-on.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Shuffling"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.groupvolume",
+      "Name": "Group Volume",
+      "Icon": "images/actions/group-volume.png",
+      "Tooltip": "Rotate to adjust group volume, press to mute group",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": false,
+      "Controllers": ["Knob"],
+      "Settings": {
+        "groupGid": ""
+      },
+      "States": [
+        {
+          "Image": "images/actions/group-volume.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Grp Vol"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.inputselect",
+      "Name": "Input Source",
+      "Icon": "images/actions/input-select.png",
+      "Tooltip": "Switch HEOS input source (HDMI, optical, etc.)",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "Settings": {
+        "inputName": "",
+        "inputLabel": ""
+      },
+      "States": [
+        {
+          "Image": "images/actions/input-select.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Input"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.profileswitch",
+      "Name": "Switch Profile",
+      "Icon": "images/actions/profile-switch.png",
+      "Tooltip": "Switch to a saved speaker profile",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "Settings": {
+        "profileId": "",
+        "profileLabel": ""
+      },
+      "States": [
+        {
+          "Image": "images/actions/profile-switch.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Profile"
+        }
+      ]
     }
   ]
 }

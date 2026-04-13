@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 VSDinside StreamDock plugin that controls Denon HEOS speakers from physical buttons and rotary knobs (MagTran M3 and other StreamDock devices). Node.js 20.8.1 backend communicating with HEOS speakers over TCP port 1255.
 
-**Status:** Phases 1-6 complete. Infrastructure, core playback, volume knob, preset buttons, Property Inspector settings UI, and resilience & polish are all implemented. Next: Phase 7 (future enhancements). See `docs/plans/00-SUMMARY.md` for the full roadmap.
+**Status:** Phases 1-7 complete. All planned features implemented: core playback, volume knob, preset buttons, Property Inspector settings UI, resilience & polish, album art, SSDP discovery, group volume, input source selection, repeat/shuffle toggle, speaker profiles, and now-playing title. See `docs/plans/00-SUMMARY.md` for the full roadmap.
 
 ## Build Commands
 
@@ -33,7 +33,9 @@ MagTran M3 --> VSD Craft (WebSocket) --> Plugin (Node.js) --> HEOS Speaker (TCP:
 
 - **`src/index.js`** -- WebSocket registration with VSD Craft, event dispatch to action handlers, global settings management
 - **`src/heos-client.js`** -- TCP connection to HEOS, command serialization queue, response parser, event routing, heartbeat, reconnection
-- **`src/actions/`** -- One module per action (play-pause, next-prev, mute, volume, preset). Each exports handler functions (`onWillAppear`, `onKeyDown`, `onDialRotate`, etc.)
+- **`src/image-utils.js`** -- HTTP image fetch with redirect handling, base64 encoding, SVG album art generation
+- **`src/ssdp-discovery.js`** -- UDP multicast SSDP auto-discovery of HEOS speakers on LAN
+- **`src/actions/`** -- One module per action (play-pause, next-prev, mute, volume, preset, group-preset, play-mode, group-volume, input-select, profile-switch). Each exports handler functions (`onWillAppear`, `onKeyDown`, `onDialRotate`, etc.)
 - **`com.vsd.craft.heos.sdPlugin/`** -- Deployed plugin folder containing `manifest.json`, bundled `plugin/index.js`, property inspector UI, and images
 - **`property-inspector/`** -- HTML/JS/CSS settings UI running in browser context (uses browser-native WebSocket, not `ws`)
 

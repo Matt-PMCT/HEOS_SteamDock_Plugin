@@ -1,3 +1,38 @@
+const { fetchAlbumArt } = require('../image-utils');
+
+function formatNowPlaying(media) {
+  if (!media) return '';
+  const artist = media.artist || '';
+  const song = media.song || '';
+  let title = artist && song ? `${artist} - ${song}` : (song || artist || '');
+  if (title.length > 10) title = title.substring(0, 9) + '\u2026';
+  return title;
+}
+
+function updateMediaDisplay(contexts, heosClient, vsd) {
+  const media = heosClient.playerState.media;
+  const title = formatNowPlaying(media);
+
+  if (media && media.image_url) {
+    fetchAlbumArt(media.image_url, title).then(svgUri => {
+      for (const ctx of contexts) {
+        if (svgUri) {
+          vsd.setImage(ctx, svgUri);
+          vsd.setTitle(ctx, '');
+        } else {
+          vsd.setImage(ctx, '');
+          vsd.setTitle(ctx, title);
+        }
+      }
+    });
+  } else {
+    for (const ctx of contexts) {
+      vsd.setImage(ctx, '');
+      vsd.setTitle(ctx, title);
+    }
+  }
+}
+
 module.exports = {
   actionUUID: 'com.vsd.craft.heos.playpause',
 
@@ -19,9 +54,10 @@ module.exports = {
   onWillAppear(message, { heosClient, vsd }) {
     const state = heosClient.playerState.playState === 'play' ? 1 : 0;
     vsd.setState(message.context, state);
+    updateMediaDisplay([message.context], heosClient, vsd);
   },
 
-  onHeosEvent(eventName, params, { contexts, vsd }) {
+  onHeosEvent(eventName, params, { contexts, heosClient, vsd }) {
     if (eventName === 'event/player_state_changed') {
       const state = params.state === 'play' ? 1 : 0;
       for (const ctx of contexts) {
@@ -33,6 +69,9 @@ module.exports = {
         vsd.showAlert(ctx);
         vsd.setState(ctx, 0);
       }
+    }
+    if (eventName === 'event/_media_updated') {
+      updateMediaDisplay(contexts, heosClient, vsd);
     }
   }
 };

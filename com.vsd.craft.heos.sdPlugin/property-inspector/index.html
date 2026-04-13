@@ -128,8 +128,12 @@
 
     <div class="sdpi-item">
       <div class="sdpi-item-label"></div>
-      <button class="sdpi-item-value" id="btn-connect">Connect &amp; Discover</button>
+      <div class="sdpi-item-value" style="display:flex;gap:4px;">
+        <button id="btn-connect" style="flex:1;">Connect &amp; Discover</button>
+        <button id="btn-ssdp" style="flex:0 0 auto;background:#5a7a5a;">Find Speakers</button>
+      </div>
     </div>
+    <div id="ssdp-results" style="display:none;padding:4px 0 4px 80px;"></div>
 
     <div class="sdpi-item" id="status-row">
       <div class="sdpi-item-label">Status</div>
@@ -186,7 +190,85 @@
     </div>
   </div>
 
-  <!-- Section 4: Account status (read-only; sign in via HEOS app) -->
+  <!-- Section 4: Group Volume settings (ONLY for groupvolume action) -->
+  <div id="group-volume-section" style="display:none;">
+    <div class="sdpi-heading">Group Volume Settings</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Group</div>
+        <select class="sdpi-item-value" id="group-volume-select">
+          <option value="">Auto (current player's group)</option>
+        </select>
+      </div>
+      <div class="sdpi-item-hint">Leave on Auto to control whichever group the selected player belongs to.</div>
+    </div>
+  </div>
+
+  <!-- Section 5: Input Source settings (ONLY for inputselect action) -->
+  <div id="input-section" style="display:none;">
+    <div class="sdpi-heading">Input Source Settings</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Source</div>
+        <select class="sdpi-item-value" id="input-source-select">
+          <option value="">Select a source...</option>
+        </select>
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Label</div>
+        <input class="sdpi-item-value" type="text" id="input-label"
+               placeholder="e.g. HDMI 1" />
+      </div>
+      <div class="sdpi-item-hint">Button title. Leave blank for "Input".</div>
+    </div>
+  </div>
+
+  <!-- Section 6: Profile Switch settings (ONLY for profileswitch action) -->
+  <div id="profile-switch-section" style="display:none;">
+    <div class="sdpi-heading">Profile Switch Settings</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Profile</div>
+        <select class="sdpi-item-value" id="switch-profile-select">
+          <option value="">Select a profile...</option>
+        </select>
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Label</div>
+        <input class="sdpi-item-value" type="text" id="profile-switch-label"
+               placeholder="e.g. Bedroom" />
+      </div>
+      <div class="sdpi-item-hint">Button title. Leave blank for "Profile".</div>
+    </div>
+  </div>
+
+  <!-- Section 7: Profile Management (shown when profiles exist or for profileswitch) -->
+  <div id="profiles-section" style="display:none;">
+    <div class="sdpi-heading">Speaker Profiles</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Profiles</div>
+        <select class="sdpi-item-value" id="profile-list-select">
+          <option value="">No saved profiles</option>
+        </select>
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Name</div>
+        <input class="sdpi-item-value" type="text" id="profile-name"
+               placeholder="e.g. Living Room" />
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label"></div>
+        <div class="sdpi-item-value" style="display:flex;gap:4px;">
+          <button id="btn-save-profile" style="flex:1;">Save Current as Profile</button>
+          <button id="btn-delete-profile" style="flex:0 0 auto;background:#a44;">Delete</button>
+        </div>
+      </div>
+      <div class="sdpi-item-hint">Saves current IP and player as a named profile.</div>
+    </div>
+  </div>
+
+  <!-- Section 8: Account status (read-only; sign in via HEOS app) -->
   <div id="account-section" style="display:none;">
     <div class="sdpi-heading">HEOS Account</div>
     <div class="sdpi-wrapper">
@@ -279,6 +361,12 @@
         if (currentAction === 'com.vsd.craft.heos.grouppreset') {
           populateGroupPresetPlayers();
         }
+        if (currentAction === 'com.vsd.craft.heos.groupvolume') {
+          populateGroupVolumeDropdown();
+        }
+        if (currentAction === 'com.vsd.craft.heos.inputselect') {
+          populateInputSourceDropdown();
+        }
       } else if (connectPending) {
         // Keep showing "Connecting..." while waiting for discovery data
       } else if (globalSettings.heosIp) {
@@ -303,6 +391,16 @@
         acctEl.textContent = 'Not signed in';
         acctEl.style.color = '';
       }
+
+      // SSDP discovery results
+      if (globalSettings._piDiscoveryResults) {
+        var results = globalSettings._piDiscoveryResults;
+        var ssdpBtn = document.getElementById('btn-ssdp');
+        ssdpBtn.textContent = 'Find Speakers';
+        ssdpBtn.disabled = false;
+        showSsdpResults(results);
+        saveGlobalSettings({ _piDiscoveryResults: null });
+      }
     }
 
     function populateActionUI() {
@@ -321,6 +419,42 @@
         populateGroupPresetPlayers();
       } else {
         groupPresetSection.style.display = 'none';
+      }
+
+      var groupVolumeSection = document.getElementById('group-volume-section');
+      if (currentAction === 'com.vsd.craft.heos.groupvolume') {
+        groupVolumeSection.style.display = '';
+        populateGroupVolumeDropdown();
+      } else {
+        groupVolumeSection.style.display = 'none';
+      }
+
+      var inputSection = document.getElementById('input-section');
+      if (currentAction === 'com.vsd.craft.heos.inputselect') {
+        inputSection.style.display = '';
+        document.getElementById('input-label').value = currentSettings.inputLabel || '';
+        populateInputSourceDropdown();
+      } else {
+        inputSection.style.display = 'none';
+      }
+
+      var profileSwitchSection = document.getElementById('profile-switch-section');
+      if (currentAction === 'com.vsd.craft.heos.profileswitch') {
+        profileSwitchSection.style.display = '';
+        document.getElementById('profile-switch-label').value = currentSettings.profileLabel || '';
+        populateProfileSwitchDropdown();
+      } else {
+        profileSwitchSection.style.display = 'none';
+      }
+
+      // Show profiles section when profiles exist or when on profile-switch action
+      var profiles = globalSettings.profiles || [];
+      var profilesSection = document.getElementById('profiles-section');
+      if (profiles.length > 0 || currentAction === 'com.vsd.craft.heos.profileswitch') {
+        profilesSection.style.display = '';
+        populateProfileList();
+      } else {
+        profilesSection.style.display = 'none';
       }
     }
 
@@ -366,7 +500,42 @@
       return null;
     }
 
+    function showSsdpResults(results) {
+      var container = document.getElementById('ssdp-results');
+      container.style.display = '';
+      container.innerHTML = '';
+      if (results.length === 0) {
+        container.innerHTML = '<span style="color:#777;font-size:11px;">No speakers found on network.</span>';
+        setTimeout(function () { container.style.display = 'none'; }, 5000);
+        return;
+      }
+      for (var i = 0; i < results.length; i++) {
+        var div = document.createElement('div');
+        div.style.cssText = 'cursor:pointer;padding:2px 0;color:#4a90d9;font-size:12px;';
+        div.textContent = results[i].ip;
+        div.dataset.ip = results[i].ip;
+        div.addEventListener('click', function () {
+          document.getElementById('heos-ip').value = this.dataset.ip;
+          container.style.display = 'none';
+        });
+        container.appendChild(div);
+      }
+    }
+
     // --- Event Listeners ---
+
+    document.getElementById('btn-ssdp').addEventListener('click', function () {
+      var btn = this;
+      btn.textContent = 'Searching\u2026';
+      btn.disabled = true;
+      saveGlobalSettings({ _discoverRequest: Date.now() });
+      setTimeout(function () {
+        if (btn.disabled) {
+          btn.textContent = 'Find Speakers';
+          btn.disabled = false;
+        }
+      }, 8000);
+    });
 
     document.getElementById('btn-connect').addEventListener('click', function () {
       var ip = document.getElementById('heos-ip').value.trim();
@@ -488,6 +657,142 @@
         if (cb) cb.checked = true;
       }
       saveSettings({ leaderPid: leaderPid, groupPids: pids });
+    });
+
+    // --- Profile Management ---
+
+    function populateProfileList() {
+      var profiles = globalSettings.profiles || [];
+      var select = document.getElementById('profile-list-select');
+      select.innerHTML = '';
+      if (profiles.length === 0) {
+        select.innerHTML = '<option value="">No saved profiles</option>';
+      } else {
+        select.innerHTML = '<option value="">Select a profile...</option>';
+        for (var i = 0; i < profiles.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = profiles[i].id;
+          opt.textContent = profiles[i].name + ' (' + profiles[i].ip + ')';
+          select.appendChild(opt);
+        }
+      }
+    }
+
+    function populateProfileSwitchDropdown() {
+      var profiles = globalSettings.profiles || [];
+      var select = document.getElementById('switch-profile-select');
+      var savedId = currentSettings.profileId || '';
+      select.innerHTML = '<option value="">Select a profile...</option>';
+      for (var i = 0; i < profiles.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = profiles[i].id;
+        opt.textContent = profiles[i].name + ' (' + profiles[i].ip + ')';
+        if (profiles[i].id === savedId) opt.selected = true;
+        select.appendChild(opt);
+      }
+    }
+
+    document.getElementById('btn-save-profile').addEventListener('click', function () {
+      var name = document.getElementById('profile-name').value.trim();
+      if (!name) { document.getElementById('profile-name').focus(); return; }
+      var ip = globalSettings.heosIp;
+      var playerId = globalSettings.playerId;
+      if (!ip) return;
+
+      var profiles = globalSettings.profiles || [];
+      var id = 'p' + Date.now();
+      profiles.push({ id: id, name: name, ip: ip, playerId: playerId || null });
+      document.getElementById('profile-name').value = '';
+      saveGlobalSettings({ profiles: profiles, activeProfileId: id });
+      populateProfileList();
+      if (currentAction === 'com.vsd.craft.heos.profileswitch') {
+        populateProfileSwitchDropdown();
+      }
+    });
+
+    document.getElementById('btn-delete-profile').addEventListener('click', function () {
+      var select = document.getElementById('profile-list-select');
+      var selectedId = select.value;
+      if (!selectedId) return;
+      var profiles = (globalSettings.profiles || []).filter(function (p) { return p.id !== selectedId; });
+      var activeId = globalSettings.activeProfileId === selectedId ? '' : globalSettings.activeProfileId;
+      saveGlobalSettings({ profiles: profiles, activeProfileId: activeId });
+      populateProfileList();
+      if (currentAction === 'com.vsd.craft.heos.profileswitch') {
+        populateProfileSwitchDropdown();
+      }
+    });
+
+    document.getElementById('switch-profile-select').addEventListener('change', function () {
+      saveSettings({ profileId: this.value });
+    });
+
+    document.getElementById('profile-switch-label').addEventListener('change', function () {
+      saveSettings({ profileLabel: this.value.trim() });
+    });
+
+    // --- Input Source ---
+
+    function populateInputSourceDropdown() {
+      var sources = globalSettings._piSources || [];
+      var select = document.getElementById('input-source-select');
+      var savedInput = currentSettings.inputName || '';
+      select.innerHTML = '<option value="">Select a source...</option>';
+      for (var i = 0; i < sources.length; i++) {
+        var src = sources[i];
+        // Filter: only show hardware input sources (AUX, HDMI, optical, etc.)
+        // HEOS input source names typically contain "inputs/" or have specific naming
+        var name = (src.name || '').toLowerCase();
+        var isInput = name.indexOf('aux') !== -1 || name.indexOf('hdmi') !== -1 ||
+                      name.indexOf('optical') !== -1 || name.indexOf('analog') !== -1 ||
+                      name.indexOf('coax') !== -1 || name.indexOf('bluetooth') !== -1 ||
+                      name.indexOf('input') !== -1 || name.indexOf('tv') !== -1;
+        if (!isInput) continue;
+        var opt = document.createElement('option');
+        opt.value = src.name;
+        opt.textContent = src.name;
+        if (src.name === savedInput) opt.selected = true;
+        select.appendChild(opt);
+      }
+      // If no inputs found, show all sources as fallback
+      if (select.options.length <= 1) {
+        for (var i = 0; i < sources.length; i++) {
+          var opt = document.createElement('option');
+          opt.value = sources[i].name;
+          opt.textContent = sources[i].name;
+          if (sources[i].name === savedInput) opt.selected = true;
+          select.appendChild(opt);
+        }
+      }
+    }
+
+    document.getElementById('input-source-select').addEventListener('change', function () {
+      saveSettings({ inputName: this.value });
+    });
+
+    document.getElementById('input-label').addEventListener('change', function () {
+      saveSettings({ inputLabel: this.value.trim() });
+    });
+
+    // --- Group Volume ---
+
+    function populateGroupVolumeDropdown() {
+      var groups = globalSettings._piGroups || [];
+      var select = document.getElementById('group-volume-select');
+      var savedGid = currentSettings.groupGid || '';
+      select.innerHTML = '<option value="">Auto (current player\'s group)</option>';
+      for (var i = 0; i < groups.length; i++) {
+        var opt = document.createElement('option');
+        var gid = groups[i].gid || '';
+        opt.value = gid;
+        opt.textContent = groups[i].name;
+        if (String(gid) === String(savedGid)) opt.selected = true;
+        select.appendChild(opt);
+      }
+    }
+
+    document.getElementById('group-volume-select').addEventListener('change', function () {
+      saveSettings({ groupGid: this.value ? parseInt(this.value, 10) : '' });
     });
 
     // --- Helpers ---
