@@ -144,6 +144,28 @@
           "Title": "Preset"
         }
       ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.grouppreset",
+      "Name": "Group Preset",
+      "Icon": "images/actions/group-preset.png",
+      "Tooltip": "Group or ungroup a preset combination of HEOS speakers",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "Settings": {
+        "groupPids": [],
+        "leaderPid": null,
+        "groupLabel": ""
+      },
+      "States": [
+        {
+          "Image": "images/actions/group-preset.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "10",
+          "Title": "Group"
+        }
+      ]
     }
   ]
 }

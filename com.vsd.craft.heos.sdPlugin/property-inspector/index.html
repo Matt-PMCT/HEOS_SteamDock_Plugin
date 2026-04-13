@@ -96,6 +96,23 @@
       margin-bottom: 4px;
       padding-left: 80px;
     }
+
+    .sdpi-checkbox-item {
+      display: flex;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+
+    .sdpi-checkbox-item input[type="checkbox"] {
+      margin-right: 8px;
+      accent-color: #4a90d9;
+    }
+
+    .sdpi-checkbox-item label {
+      font-size: 13px;
+      color: #ccc;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -140,7 +157,36 @@
     </div>
   </div>
 
-  <!-- Section 3: Account status (read-only; sign in via HEOS app) -->
+  <!-- Section 3: Group preset config (ONLY for grouppreset action) -->
+  <div id="group-preset-section" style="display:none;">
+    <div class="sdpi-heading">Group Preset Settings</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Label</div>
+        <input class="sdpi-item-value" type="text" id="group-label"
+               placeholder="e.g. Party Mode" />
+      </div>
+      <div class="sdpi-item-hint">Button title. Leave blank for "Grp".</div>
+
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Leader</div>
+        <select class="sdpi-item-value" id="group-leader-select">
+          <option value="">Select leader...</option>
+        </select>
+      </div>
+      <div class="sdpi-item-hint">The leader controls playback for the group.</div>
+
+      <div class="sdpi-item" style="align-items:flex-start;">
+        <div class="sdpi-item-label">Members</div>
+        <div class="sdpi-item-value" id="group-members-list">
+          <span style="color:#777;">Connect to see players</span>
+        </div>
+      </div>
+      <div class="sdpi-item-hint">Select at least one member. Leader + members form the group.</div>
+    </div>
+  </div>
+
+  <!-- Section 4: Account status (read-only; sign in via HEOS app) -->
   <div id="account-section" style="display:none;">
     <div class="sdpi-heading">HEOS Account</div>
     <div class="sdpi-wrapper">
@@ -230,6 +276,9 @@
         connectPending = false;
         clearTimeout(connectTimer);
         populatePlayerDropdown(players, selectedPid, groups);
+        if (currentAction === 'com.vsd.craft.heos.grouppreset') {
+          populateGroupPresetPlayers();
+        }
       } else if (connectPending) {
         // Keep showing "Connecting..." while waiting for discovery data
       } else if (globalSettings.heosIp) {
@@ -263,6 +312,15 @@
         document.getElementById('preset-number').value = parseInt(currentSettings.presetNumber, 10) || 1;
       } else {
         presetSection.style.display = 'none';
+      }
+
+      var groupPresetSection = document.getElementById('group-preset-section');
+      if (currentAction === 'com.vsd.craft.heos.grouppreset') {
+        groupPresetSection.style.display = '';
+        document.getElementById('group-label').value = currentSettings.groupLabel || '';
+        populateGroupPresetPlayers();
+      } else {
+        groupPresetSection.style.display = 'none';
       }
     }
 
@@ -349,6 +407,87 @@
       if (num > 99) num = 99;
       this.value = num;
       saveSettings({ presetNumber: num });
+    });
+
+    // --- Group Preset ---
+
+    function populateGroupPresetPlayers() {
+      var players = globalSettings._piPlayers || [];
+      var leaderSelect = document.getElementById('group-leader-select');
+      var membersList = document.getElementById('group-members-list');
+      var savedPids = currentSettings.groupPids || [];
+      var savedLeader = currentSettings.leaderPid;
+
+      // Populate leader dropdown
+      leaderSelect.innerHTML = '<option value="">Select leader...</option>';
+      for (var i = 0; i < players.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = players[i].pid;
+        opt.textContent = players[i].name + (players[i].model ? ' (' + players[i].model + ')' : '');
+        if (players[i].pid === savedLeader) opt.selected = true;
+        leaderSelect.appendChild(opt);
+      }
+
+      // Populate member checkboxes
+      if (players.length === 0) {
+        membersList.innerHTML = '<span style="color:#777;">Connect to see players</span>';
+        return;
+      }
+      membersList.innerHTML = '';
+      for (var i = 0; i < players.length; i++) {
+        var div = document.createElement('div');
+        div.className = 'sdpi-checkbox-item';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.id = 'group-member-' + players[i].pid;
+        cb.value = players[i].pid;
+        cb.checked = savedPids.indexOf(players[i].pid) !== -1;
+        cb.addEventListener('change', onGroupMemberChange);
+        var lbl = document.createElement('label');
+        lbl.htmlFor = cb.id;
+        lbl.textContent = players[i].name + (players[i].model ? ' (' + players[i].model + ')' : '');
+        div.appendChild(cb);
+        div.appendChild(lbl);
+        membersList.appendChild(div);
+      }
+    }
+
+    function getSelectedGroupPids() {
+      var checkboxes = document.querySelectorAll('#group-members-list input[type="checkbox"]');
+      var pids = [];
+      for (var i = 0; i < checkboxes.length; i++) {
+        if (checkboxes[i].checked) {
+          pids.push(parseInt(checkboxes[i].value, 10));
+        }
+      }
+      return pids;
+    }
+
+    function onGroupMemberChange() {
+      var pids = getSelectedGroupPids();
+      var leaderPid = currentSettings.leaderPid;
+      // If leader was unchecked, clear the leader
+      if (leaderPid && pids.indexOf(leaderPid) === -1) {
+        leaderPid = null;
+        document.getElementById('group-leader-select').value = '';
+      }
+      saveSettings({ groupPids: pids, leaderPid: leaderPid });
+    }
+
+    document.getElementById('group-label').addEventListener('change', function () {
+      saveSettings({ groupLabel: this.value.trim() });
+    });
+
+    document.getElementById('group-leader-select').addEventListener('change', function () {
+      var leaderPid = this.value ? parseInt(this.value, 10) : null;
+      var pids = getSelectedGroupPids();
+      // Auto-include leader in the PID list
+      if (leaderPid && pids.indexOf(leaderPid) === -1) {
+        pids.push(leaderPid);
+        var cb = document.getElementById('group-member-' + leaderPid);
+        if (cb) cb.checked = true;
+      }
+      saveSettings({ leaderPid: leaderPid, groupPids: pids });
     });
 
     // --- Helpers ---

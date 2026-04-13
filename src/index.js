@@ -5,6 +5,7 @@ const nextPrev = require('./actions/next-prev');
 const mute = require('./actions/mute');
 const volume = require('./actions/volume');
 const preset = require('./actions/preset');
+const groupPreset = require('./actions/group-preset');
 
 // --- Module-Level State ---
 
@@ -24,6 +25,7 @@ for (const uuid of nextPrev.actionUUIDs) {
 handlers[mute.actionUUID] = mute;
 handlers[volume.actionUUID] = volume;
 handlers[preset.actionUUID] = preset;
+handlers[groupPreset.actionUUID] = groupPreset;
 
 // --- CLI Argument Parsing ---
 
