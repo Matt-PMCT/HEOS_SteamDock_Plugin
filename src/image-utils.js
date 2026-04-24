@@ -102,12 +102,17 @@ function fetchAlbumArt(imageUrl) {
       const result = `data:${mimeType};base64,${base64Data}`;
       _cachedUrl = imageUrl;
       _cachedUri = result;
-      logger.log('[image-utils] Album art loaded:', imageUrl.substring(0, 80),
-        'bytes=' + buffer.length, 'uri_len=' + result.length, 'mime=' + mimeType);
+      logger.log('[image-utils] Album art loaded:',
+        'url=' + imageUrl,
+        'url_len=' + imageUrl.length,
+        'bytes=' + buffer.length,
+        'uri_len=' + result.length,
+        'mime=' + mimeType);
       return result;
     })
     .catch((err) => {
-      logger.error('[image-utils] Failed to fetch album art:', err.message, 'url=' + imageUrl.substring(0, 80));
+      logger.error('[image-utils] Failed to fetch album art:', err.message,
+        'url=' + imageUrl, 'url_len=' + imageUrl.length);
       return null;
     });
 }

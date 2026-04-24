@@ -94,7 +94,13 @@ function setState(context, state) {
 }
 
 function setImage(context, image, target = 0) {
-  send({ event: 'setImage', context, payload: { image, target } });
+  // Per Stream Deck / VSD Craft protocol: OMITTING the image field resets the
+  // key to its manifest-declared state image. Passing image:null does NOT
+  // reset — it leaves the previous image in place. Callers who want to clear
+  // a previously-set image (e.g. album art being turned off) pass null here.
+  const payload = { target };
+  if (image != null) payload.image = image;
+  send({ event: 'setImage', context, payload });
 }
 
 function showOk(context) {
@@ -206,6 +212,7 @@ function dispatchEvent(message) {
       break;
 
     case 'keyDown':
+      logger.log('[HEOS-Plugin] keyDown', action, 'ctx=' + (context || '').substring(0, 12));
       if (handler && handler.onKeyDown) handler.onKeyDown(message, { heosClient, vsd });
       break;
 
@@ -218,6 +225,7 @@ function dispatchEvent(message) {
       break;
 
     case 'dialDown':
+      logger.log('[HEOS-Plugin] dialDown', action, 'ctx=' + (context || '').substring(0, 12));
       if (handler && handler.onDialDown) handler.onDialDown(message, { heosClient, vsd });
       break;
 
@@ -262,6 +270,21 @@ function dispatchEvent(message) {
 
       // Apply debug logging toggle from user settings.
       logger.setEnabled(globalSettings.debugLogging === true, LOG_PATH);
+
+      // Notify action handlers that global settings changed. This is our
+      // workaround for VSD Craft not pushing didReceiveSettings to the plugin
+      // on PI writes — actions that have user-tunable prefs (e.g. showAlbumArt)
+      // store them globally and re-render here.
+      for (const [uuid, handler] of Object.entries(handlers)) {
+        if (handler.onGlobalSettingsChange) {
+          const actionContexts = getContextsForAction(uuid);
+          if (actionContexts.length > 0) {
+            handler.onGlobalSettingsChange({
+              contexts: actionContexts, heosClient, vsd
+            });
+          }
+        }
+      }
 
       // Advertise the log file path to the PI so it can display it verbatim.
       if (globalSettings._piLogPath !== LOG_PATH) {

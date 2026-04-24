@@ -420,6 +420,11 @@
         statusEl.style.color = '';
       }
 
+      // Refresh per-action UI since some action settings are now global
+      // (e.g. showAlbumArt) — if globalSettings changed, the visible
+      // checkbox state might be stale.
+      populateActionUI();
+
       // Diagnostics: debug logging toggle + log file path
       var debugCb = document.getElementById('debug-logging');
       if (debugCb) debugCb.checked = globalSettings.debugLogging === true;
@@ -466,7 +471,10 @@
       var playpauseSection = document.getElementById('playpause-section');
       if (currentAction === 'com.vsd.craft.heos.playpause') {
         playpauseSection.style.display = '';
-        document.getElementById('show-album-art').checked = currentSettings.showAlbumArt !== false;
+        // showAlbumArt is a GLOBAL preference (VSD Craft doesn't push
+        // didReceiveSettings on PI writes, so per-action settings would
+        // not toggle live).
+        document.getElementById('show-album-art').checked = globalSettings.showAlbumArt !== false;
       } else {
         playpauseSection.style.display = 'none';
       }
@@ -645,7 +653,8 @@
     });
 
     document.getElementById('show-album-art').addEventListener('change', function () {
-      saveSettings({ showAlbumArt: this.checked });
+      // Global (see populateActionUI comment).
+      saveGlobalSettings({ showAlbumArt: this.checked });
     });
 
     document.getElementById('preset-number').addEventListener('change', function () {

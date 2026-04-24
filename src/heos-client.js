@@ -392,12 +392,21 @@ class HeosClient {
 
   startHeartbeat() {
     this.stopHeartbeat();
+    this._heartbeatFailures = 0;
     this.heartbeatTimer = setInterval(() => {
-      this.enqueue('heos://system/heart_beat').catch(() => {
-        // Heartbeat failed: socket may be half-open (writes black-holed, no FIN received).
-        // Destroy the socket to force the close handler to fire and schedule a reconnect.
-        if (this.socket) this.socket.destroy();
-      });
+      this.enqueue('heos://system/heart_beat')
+        .then(() => { this._heartbeatFailures = 0; })
+        .catch(() => {
+          // A single heartbeat failure can be a transient queue backup (e.g.,
+          // a slow set_volume ahead of us blowing past 5s). Only destroy the
+          // socket after two consecutive failures — that's the half-open signal
+          // we're actually looking for.
+          this._heartbeatFailures = (this._heartbeatFailures || 0) + 1;
+          if (this._heartbeatFailures >= 2 && this.socket) {
+            logger.error('[HEOS-Client] Heartbeat failed twice — forcing reconnect');
+            this.socket.destroy();
+          }
+        });
     }, 30000);
   }
 
@@ -411,6 +420,12 @@ class HeosClient {
   // --- Command Queue ---
 
   enqueue(command) {
+    // Verbose wire log — heartbeats are noisy every 30s, so compress those to
+    // avoid flooding; everything else logs in full so we can correlate user
+    // complaints to actual commands sent.
+    if (command !== 'heos://system/heart_beat') {
+      logger.log('[HEOS-Client] >>', command);
+    }
     return new Promise((resolve, reject) => {
       const entry = {
         command,
@@ -701,6 +716,9 @@ class HeosClient {
     const eventName = msg.heos.command;
     const params = parseHeosMessage(msg.heos.message);
     const pid = params.pid ? parseInt(params.pid, 10) : null;
+    // Wire log for every incoming event — helps answer "did our plugin
+    // cause this, or did the speaker/another controller cause it?"
+    logger.log('[HEOS-Client] <<', eventName, JSON.stringify(params));
 
     // Only process events for our target player (or global events with no pid).
     // During init, this.playerId is null — let events through so we don't drop the
