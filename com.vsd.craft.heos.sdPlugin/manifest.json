@@ -1,6 +1,6 @@
 {
   "Name": "HEOS Control",
-  "Version": "1.0.2",
+  "Version": "1.0.3",
   "Author": "Matt Emerson",
   "Description": "Control Denon HEOS speakers from your StreamDock. Play, pause, skip tracks, adjust volume with knobs, mute, and launch favorite presets.",
   "Icon": "images/plugin-icon.png",
@@ -40,13 +40,13 @@
         {
           "Image": "images/actions/play.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Play"
         },
         {
           "Image": "images/actions/pause.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Pause"
         }
       ]
@@ -63,7 +63,7 @@
         {
           "Image": "images/actions/next.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Next"
         }
       ]
@@ -80,7 +80,7 @@
         {
           "Image": "images/actions/prev.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Prev"
         }
       ]
@@ -97,13 +97,13 @@
         {
           "Image": "images/actions/unmuted.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Mute"
         },
         {
           "Image": "images/actions/muted.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Muted"
         }
       ]
@@ -120,7 +120,7 @@
         {
           "Image": "images/actions/volume.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Vol"
         }
       ]
@@ -140,7 +140,7 @@
         {
           "Image": "images/actions/preset.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Preset"
         }
       ]
@@ -162,7 +162,7 @@
         {
           "Image": "images/actions/group-preset.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Group"
         }
       ]
@@ -179,19 +179,19 @@
         {
           "Image": "images/actions/repeat-off.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Repeat"
         },
         {
           "Image": "images/actions/repeat-all.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Rep All"
         },
         {
           "Image": "images/actions/repeat-one.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Rep One"
         }
       ]
@@ -208,13 +208,13 @@
         {
           "Image": "images/actions/shuffle-off.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Shuffle"
         },
         {
           "Image": "images/actions/shuffle-on.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Shuffling"
         }
       ]
@@ -234,7 +234,7 @@
         {
           "Image": "images/actions/group-volume.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Grp Vol"
         }
       ]
@@ -255,7 +255,7 @@
         {
           "Image": "images/actions/input-select.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Input"
         }
       ]
@@ -276,7 +276,7 @@
         {
           "Image": "images/actions/profile-switch.png",
           "TitleAlignment": "bottom",
-          "FontSize": "10",
+          "FontSize": "13",
           "Title": "Profile"
         }
       ]

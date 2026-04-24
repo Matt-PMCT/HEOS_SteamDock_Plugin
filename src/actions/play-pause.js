@@ -40,41 +40,102 @@ function escapeXml(str) {
 }
 
 // Build an SVG that shows the state icon centered, with a black translucent
-// band along the bottom and the title text on top of the band. Used only for
-// the no-album-art path — album art uses the raw data URI to stay under the
-// setImage size ceiling.
-function buildStateIconSvg(isPlaying, title) {
+// band along the bottom and the title text (up to 2 lines) on top of the
+// band. Used only for the no-album-art path — album art uses the raw data
+// URI to stay under the setImage size ceiling.
+function buildStateIconSvg(isPlaying, titleLines) {
   const b64 = isPlaying ? _pauseIconB64 : _playIconB64;
   if (!b64) return null;
   const iconHref = `data:image/png;base64,${b64}`;
   let svg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="72" height="72">' +
     `<image href="${iconHref}" xlink:href="${iconHref}" width="72" height="72"/>`;
-  if (title) {
-    svg += '<rect y="54" width="72" height="18" fill="rgba(0,0,0,0.75)"/>' +
-      `<text x="36" y="66" font-size="9" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(title)}</text>`;
+
+  if (titleLines && titleLines.length > 0) {
+    // At font-size 13 the cap-height is ~9px. Single-line band = 20px,
+    // two-line band = 34px (16px line height).
+    const lines = titleLines.slice(0, MAX_LINES);
+    const bandHeight = lines.length === 1 ? 20 : 34;
+    const bandY = 72 - bandHeight;
+    svg += `<rect y="${bandY}" width="72" height="${bandHeight}" fill="rgba(0,0,0,0.75)"/>`;
+    if (lines.length === 1) {
+      svg += `<text x="36" y="66" font-size="13" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[0])}</text>`;
+    } else {
+      svg += `<text x="36" y="54" font-size="13" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[0])}</text>` +
+        `<text x="36" y="68" font-size="13" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[1])}</text>`;
+    }
   }
+
   svg += '</svg>';
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
 }
 
-// Title shown below/over the artwork. Prefers the song name; falls back to
-// the state-action label ("Play" when paused, "Pause" when playing) so the
-// button never shows stale text.
-function formatTitle(media, isPlaying) {
-  if (media) {
-    const artist = media.artist || '';
-    const song = media.song || '';
-    let title = artist && song ? `${artist} - ${song}` : (song || artist || '');
-    if (title.length > 10) title = title.substring(0, 9) + '…';
-    if (title) return title;
+// Word-wrap titles across ≤2 lines of ~10 chars each.
+const MAX_CHARS_PER_LINE = 10;
+const MAX_LINES = 2;
+
+function wrapTitle(text) {
+  if (!text) return [];
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current ? current + ' ' + word : word;
+    if (candidate.length <= MAX_CHARS_PER_LINE) {
+      current = candidate;
+    } else {
+      if (current) {
+        lines.push(current);
+        if (lines.length >= MAX_LINES) { current = ''; break; }
+      }
+      current = word.length > MAX_CHARS_PER_LINE
+        ? word.substring(0, MAX_CHARS_PER_LINE - 1) + '…'
+        : word;
+    }
   }
-  return isPlaying ? 'Pause' : 'Play';
+  if (current && lines.length < MAX_LINES) lines.push(current);
+
+  // If we ran out of lines before consuming all text, ellipsize the last line.
+  const producedChars = lines.join(' ').length;
+  if (lines.length === MAX_LINES && text.length > producedChars) {
+    const last = lines[MAX_LINES - 1];
+    if (!last.endsWith('…')) {
+      lines[MAX_LINES - 1] = last.length >= MAX_CHARS_PER_LINE
+        ? last.substring(0, MAX_CHARS_PER_LINE - 1) + '…'
+        : last + '…';
+    }
+  }
+  return lines;
+}
+
+function clipLine(text) {
+  if (!text) return '';
+  return text.length > MAX_CHARS_PER_LINE
+    ? text.substring(0, MAX_CHARS_PER_LINE - 1) + '…'
+    : text;
+}
+
+// Title shown below/over the artwork. If both song and artist are available
+// they go on separate lines (line 1 = song, line 2 = artist, each clipped
+// independently). If only one, wrap it across both lines. Falls back to the
+// state-action label ("Play" paused / "Pause" playing) when nothing is
+// playing so the button never shows stale text.
+function formatTitleLines(media, isPlaying) {
+  if (media) {
+    const song = (media.song || '').trim();
+    const artist = (media.artist || '').trim();
+    if (song && artist) return [clipLine(song), clipLine(artist)];
+    const candidate = song || artist;
+    if (candidate) return wrapTitle(candidate);
+  }
+  return [isPlaying ? 'Pause' : 'Play'];
 }
 
 function updateMediaDisplay(contexts, heosClient, vsd) {
   const media = heosClient.playerState.media;
   const isPlaying = heosClient.playerState.playState === 'play';
-  const title = formatTitle(media, isPlaying);
+  const titleLines = formatTitleLines(media, isPlaying);
+  const titleJoined = titleLines.join('\n'); // for native setTitle
   const showArt = isAlbumArtEnabled(vsd);
 
   logger.log('[play-pause] media:', media
@@ -83,40 +144,40 @@ function updateMediaDisplay(contexts, heosClient, vsd) {
         url_len: (media.image_url || '').length,
         url: media.image_url || '',
         song: media.song,
+        artist: media.artist,
+        album: media.album,
         source: media.station,
         showArt,
-        isPlaying
+        isPlaying,
+        rendered_lines: titleLines
       }
-    : { media: null, showArt, isPlaying, title });
+    : { media: null, showArt, isPlaying, rendered_lines: titleLines });
 
   for (const ctx of contexts) {
     if (showArt && media && media.image_url) {
-      // Album art path: raw data URI (title overlaid natively by VSD Craft).
-      // SVG-wrapping the 100+ KB image would exceed the setImage payload
-      // ceiling — see docs/plans/09 and commit history for why.
+      // Album art path: raw data URI (title overlaid natively by VSD Craft
+      // — it accepts \n for multi-line). SVG-wrapping the 100+ KB image
+      // would exceed the setImage payload ceiling.
       fetchAlbumArt(media.image_url).then(uri => {
         if (uri) {
           vsd.setImage(ctx, uri);
-          vsd.setTitle(ctx, title);
+          vsd.setTitle(ctx, titleJoined);
         } else {
-          vsd.setImage(ctx, buildStateIconSvg(isPlaying, title));
+          vsd.setImage(ctx, buildStateIconSvg(isPlaying, titleLines));
           vsd.setTitle(ctx, '');
         }
       }).catch(() => {
-        vsd.setImage(ctx, buildStateIconSvg(isPlaying, title));
+        vsd.setImage(ctx, buildStateIconSvg(isPlaying, titleLines));
         vsd.setTitle(ctx, '');
       });
     } else {
-      // State-icon path: SVG with icon + black title band so the text is
-      // always legible even against a transparent/bright background.
-      const svg = buildStateIconSvg(isPlaying, title);
+      const svg = buildStateIconSvg(isPlaying, titleLines);
       if (svg) {
         vsd.setImage(ctx, svg);
         vsd.setTitle(ctx, '');
       } else {
-        // Fallback: couldn't load icons from disk — let manifest defaults show.
         vsd.setImage(ctx, null);
-        vsd.setTitle(ctx, title);
+        vsd.setTitle(ctx, titleJoined);
       }
     }
   }
