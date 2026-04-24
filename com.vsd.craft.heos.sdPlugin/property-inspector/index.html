@@ -177,13 +177,6 @@
     <div class="sdpi-heading">Group Preset Settings</div>
     <div class="sdpi-wrapper">
       <div class="sdpi-item">
-        <div class="sdpi-item-label">Label</div>
-        <input class="sdpi-item-value" type="text" id="group-label"
-               placeholder="e.g. Party Mode" />
-      </div>
-      <div class="sdpi-item-hint">Button title. Leave blank for "Grp".</div>
-
-      <div class="sdpi-item">
         <div class="sdpi-item-label">Leader</div>
         <select class="sdpi-item-value" id="group-leader-select">
           <option value="">Select leader...</option>
@@ -225,12 +218,6 @@
           <option value="">Select a source...</option>
         </select>
       </div>
-      <div class="sdpi-item">
-        <div class="sdpi-item-label">Label</div>
-        <input class="sdpi-item-value" type="text" id="input-label"
-               placeholder="e.g. HDMI 1" />
-      </div>
-      <div class="sdpi-item-hint">Button title. Leave blank for "Input".</div>
     </div>
   </div>
 
@@ -244,12 +231,6 @@
           <option value="">Select a profile...</option>
         </select>
       </div>
-      <div class="sdpi-item">
-        <div class="sdpi-item-label">Label</div>
-        <input class="sdpi-item-value" type="text" id="profile-switch-label"
-               placeholder="e.g. Bedroom" />
-      </div>
-      <div class="sdpi-item-hint">Button title. Leave blank for "Profile".</div>
     </div>
   </div>
 
@@ -267,13 +248,6 @@
         MP3/AAC/WMA stream URL. Example: NPR News Now feed above plays the latest
         hourly newscast.
       </div>
-
-      <div class="sdpi-item">
-        <div class="sdpi-item-label">Label</div>
-        <input class="sdpi-item-value" type="text" id="play-url-title"
-               placeholder="e.g. NPR News" />
-      </div>
-      <div class="sdpi-item-hint">Button title. Leave blank for "On Demand".</div>
     </div>
   </div>
 
@@ -281,6 +255,13 @@
   <div id="appearance-section" style="display:none;">
     <div class="sdpi-heading">Appearance</div>
     <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Label</div>
+        <input class="sdpi-item-value" type="text" id="appearance-label"
+               placeholder="" />
+      </div>
+      <div class="sdpi-item-hint">Text shown on the button. Leave blank to hide the label band.</div>
+
       <div class="sdpi-item">
         <div class="sdpi-item-label">Color</div>
         <input class="sdpi-item-value" type="color" id="appearance-color"
@@ -526,6 +507,27 @@
       }
     }
 
+    // What the button label falls back to when no override is set. Used as
+    // the placeholder in the shared Label field so users see what "empty"
+    // will render as.
+    function computeDefaultLabel(action, settings) {
+      settings = settings || {};
+      switch (action) {
+        case 'com.vsd.craft.heos.preset':
+          return 'P' + (parseInt(settings.presetNumber, 10) || 1);
+        case 'com.vsd.craft.heos.grouppreset':
+          return settings.groupLabel || 'Grp';
+        case 'com.vsd.craft.heos.inputselect':
+          return settings.inputLabel || 'Input';
+        case 'com.vsd.craft.heos.profileswitch':
+          return settings.profileLabel || 'Profile';
+        case 'com.vsd.craft.heos.playurl':
+          return 'On Demand';
+        default:
+          return '';
+      }
+    }
+
     function populateActionUI() {
       var playpauseSection = document.getElementById('playpause-section');
       if (currentAction === 'com.vsd.craft.heos.playpause') {
@@ -549,7 +551,6 @@
       var groupPresetSection = document.getElementById('group-preset-section');
       if (currentAction === 'com.vsd.craft.heos.grouppreset') {
         groupPresetSection.style.display = '';
-        document.getElementById('group-label').value = currentSettings.groupLabel || '';
         populateGroupPresetPlayers();
       } else {
         groupPresetSection.style.display = 'none';
@@ -566,7 +567,6 @@
       var inputSection = document.getElementById('input-section');
       if (currentAction === 'com.vsd.craft.heos.inputselect') {
         inputSection.style.display = '';
-        document.getElementById('input-label').value = currentSettings.inputLabel || '';
         populateInputSourceDropdown();
       } else {
         inputSection.style.display = 'none';
@@ -575,7 +575,6 @@
       var profileSwitchSection = document.getElementById('profile-switch-section');
       if (currentAction === 'com.vsd.craft.heos.profileswitch') {
         profileSwitchSection.style.display = '';
-        document.getElementById('profile-switch-label').value = currentSettings.profileLabel || '';
         populateProfileSwitchDropdown();
       } else {
         profileSwitchSection.style.display = 'none';
@@ -585,7 +584,6 @@
       if (currentAction === 'com.vsd.craft.heos.playurl') {
         playUrlSection.style.display = '';
         document.getElementById('play-url-source').value = currentSettings.sourceUrl || '';
-        document.getElementById('play-url-title').value = currentSettings.buttonTitle || '';
       } else {
         playUrlSection.style.display = 'none';
       }
@@ -603,6 +601,11 @@
         appearanceSection.style.display = '';
         document.getElementById('appearance-color').value = currentSettings.iconColor || '#4a90e2';
         document.getElementById('appearance-glyph').value = currentSettings.iconGlyph || 'play';
+        // Label field: show the current override (if any), with placeholder
+        // reflecting the auto-generated default for this action.
+        var labelInput = document.getElementById('appearance-label');
+        labelInput.value = currentSettings.buttonTitle != null ? currentSettings.buttonTitle : '';
+        labelInput.placeholder = computeDefaultLabel(currentAction, currentSettings);
       } else {
         appearanceSection.style.display = 'none';
       }
@@ -774,8 +777,8 @@
       requestButtonRefresh();
     });
 
-    document.getElementById('play-url-title').addEventListener('input', function () {
-      saveSettings({ buttonTitle: this.value.trim() });
+    document.getElementById('appearance-label').addEventListener('input', function () {
+      saveSettings({ buttonTitle: this.value });
       requestButtonRefresh();
     });
 
@@ -853,11 +856,6 @@
       }
       saveSettings({ groupPids: pids, leaderPid: leaderPid });
     }
-
-    document.getElementById('group-label').addEventListener('input', function () {
-      saveSettings({ groupLabel: this.value.trim() });
-      requestButtonRefresh();
-    });
 
     document.getElementById('group-leader-select').addEventListener('change', function () {
       var leaderPid = this.value ? parseInt(this.value, 10) : null;
@@ -939,11 +937,6 @@
       saveSettings({ profileId: this.value });
     });
 
-    document.getElementById('profile-switch-label').addEventListener('input', function () {
-      saveSettings({ profileLabel: this.value.trim() });
-      requestButtonRefresh();
-    });
-
     // --- Input Source ---
 
     function populateInputSourceDropdown() {
@@ -981,11 +974,6 @@
 
     document.getElementById('input-source-select').addEventListener('change', function () {
       saveSettings({ inputName: this.value });
-    });
-
-    document.getElementById('input-label').addEventListener('input', function () {
-      saveSettings({ inputLabel: this.value.trim() });
-      requestButtonRefresh();
     });
 
     // --- Group Volume ---
