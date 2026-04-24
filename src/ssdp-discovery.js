@@ -40,7 +40,9 @@ function discoverHeosSpeakers(timeoutMs = 5000) {
       if (closed) return;
       closed = true;
       socket.close();
-      resolve([]);
+      // Return whatever we'd already collected, not an empty list — on a flaky
+      // multicast socket we may have received one response before the error.
+      resolve(Array.from(found.values()));
     });
 
     socket.bind(() => {
@@ -49,12 +51,19 @@ function discoverHeosSpeakers(timeoutMs = 5000) {
       } catch (e) {
         console.error('[SSDP] Failed to join multicast group:', e.message);
       }
-      socket.send(searchMessage, 0, searchMessage.length, SSDP_PORT, SSDP_MULTICAST_ADDR);
+      try {
+        socket.send(searchMessage, 0, searchMessage.length, SSDP_PORT, SSDP_MULTICAST_ADDR);
+      } catch (e) {
+        console.error('[SSDP] Send failed:', e.message);
+      }
 
       // Send a second search after 1s for reliability
       setTimeout(() => {
-        if (!closed) {
+        if (closed) return;
+        try {
           socket.send(searchMessage, 0, searchMessage.length, SSDP_PORT, SSDP_MULTICAST_ADDR);
+        } catch (e) {
+          console.error('[SSDP] Second send failed:', e.message);
         }
       }, 1000);
     });

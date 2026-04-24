@@ -20,6 +20,24 @@ let heosClient = null;
 let globalSettings = {};
 const contextMap = new Map(); // Map<context, { action, settings }>
 
+// Fields the plugin owns and publishes to the PI. If the PI ever echoes back
+// stale null/undefined values for any of these, we preserve our current value
+// rather than letting the PI clobber us.
+const PLUGIN_OWNED_KEYS = [
+  '_piPlayers', '_piGroups', '_piSources', '_piSignedIn',
+  '_piError', '_piDiscoveryResults', '_piDiscoveryRequestId'
+];
+
+// VSD Craft lifecycle events we receive but don't act on — log them once in
+// debug builds if ever needed, but don't spam the default log.
+const SILENT_EVENTS = new Set([
+  'titleParametersDidChange',
+  'deviceDidConnect',
+  'deviceDidDisconnect',
+  'applicationDidLaunch',
+  'applicationDidTerminate'
+]);
+
 // --- Action Handler Registry ---
 
 const handlers = {};
@@ -210,28 +228,64 @@ function dispatchEvent(message) {
     case 'didReceiveGlobalSettings': {
       const newSettings = (message.payload && message.payload.settings) || {};
       const ipChanged = newSettings.heosIp && newSettings.heosIp !== globalSettings.heosIp;
-      const playerIdChanged = newSettings.playerId !== globalSettings.playerId;
+      // Normalize playerId to a number on both sides before comparing — one side
+      // can be a String (from PI) while the other is a Number (profile-switch),
+      // and HEOS silently drops events when the mismatch slips into event filters.
+      const newPid = newSettings.playerId != null && newSettings.playerId !== ''
+        ? parseInt(newSettings.playerId, 10) : null;
+      const oldPid = globalSettings.playerId != null && globalSettings.playerId !== ''
+        ? parseInt(globalSettings.playerId, 10) : null;
+      const playerIdChanged = newPid !== oldPid;
       const discoverRequested = newSettings._discoverRequest && newSettings._discoverRequest !== globalSettings._discoverRequest;
-      const pid = newSettings.playerId ? parseInt(newSettings.playerId, 10) : null;
-      globalSettings = newSettings;
+
+      // Merge: take the new settings but ALWAYS overwrite plugin-owned `_pi*`
+      // keys with our current value. The PI can echo these back (stale non-null
+      // data from before a plugin-side update, or a null written to "consume"
+      // them) but the plugin is the sole authority. The next plugin-side write
+      // is what updates them.
+      const merged = { ...newSettings };
+      for (const key of PLUGIN_OWNED_KEYS) {
+        if (key in globalSettings) {
+          merged[key] = globalSettings[key];
+        } else {
+          delete merged[key];
+        }
+      }
+      globalSettings = merged;
 
       // SSDP discovery request from PI
       if (discoverRequested) {
+        const requestId = newSettings._discoverRequest;
         globalSettings._discoverRequest = null;
         setGlobalSettings(globalSettings);
-        discoverHeosSpeakers(5000).then(results => {
-          globalSettings = { ...globalSettings, _piDiscoveryResults: results };
-          setGlobalSettings(globalSettings);
-        });
+        discoverHeosSpeakers(5000)
+          .then(results => {
+            globalSettings = {
+              ...globalSettings,
+              _piDiscoveryResults: results,
+              _piDiscoveryRequestId: requestId
+            };
+            setGlobalSettings(globalSettings);
+          })
+          .catch(err => {
+            console.error('[HEOS-Plugin] SSDP discovery failed:', err.message);
+            globalSettings = {
+              ...globalSettings,
+              _piDiscoveryResults: [],
+              _piDiscoveryRequestId: requestId,
+              _piError: 'Discovery failed: ' + err.message
+            };
+            setGlobalSettings(globalSettings);
+          });
         break;
       }
 
       if (ipChanged || (!heosClient.isConnected() && globalSettings.heosIp)) {
         if (ipChanged) heosClient.reconnectDelay = 1000;
-        heosClient.playerId = pid;
+        heosClient.playerId = newPid;
         heosClient.connect(globalSettings.heosIp);
       } else if (playerIdChanged && heosClient.isConnected()) {
-        heosClient.runInitSequence(pid);
+        heosClient.runInitSequence(newPid);
       } else if (heosClient.isConnected() && heosClient.players.length > 0 && !globalSettings._piPlayers) {
         // PI cleared _piPlayers (e.g. re-clicked Connect on same IP) -- re-publish
         savePIDiscoveryData();
@@ -257,7 +311,9 @@ function dispatchEvent(message) {
       break;
 
     default:
-      console.log('[HEOS-Plugin] Unknown event:', event);
+      if (!SILENT_EVENTS.has(event)) {
+        console.log('[HEOS-Plugin] Unknown event:', event);
+      }
       break;
   }
 }

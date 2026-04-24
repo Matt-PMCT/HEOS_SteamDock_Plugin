@@ -25,12 +25,15 @@ function updateMediaDisplay(contexts, heosClient, vsd) {
           vsd.setImage(ctx, svgUri);
           vsd.setTitle(ctx, '');
         } else {
-          vsd.setImage(ctx, '');
+          vsd.setImage(ctx, null);
           vsd.setTitle(ctx, title);
         }
+      }).catch(() => {
+        vsd.setImage(ctx, null);
+        vsd.setTitle(ctx, title);
       });
     } else {
-      vsd.setImage(ctx, '');
+      vsd.setImage(ctx, null);
       vsd.setTitle(ctx, title);
     }
   }

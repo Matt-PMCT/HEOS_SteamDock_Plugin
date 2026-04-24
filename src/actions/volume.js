@@ -106,10 +106,15 @@ module.exports = {
     this._setDisplay(message.context, heosClient.playerState.volume, heosClient.playerState.mute, vsd);
   },
 
-  onWillDisappear(message) {
+  onWillDisappear(message, { heosClient, vsd }) {
     const state = this._state.get(message.context);
     if (state) {
       clearTimeout(state.debounceTimer);
+      // Flush any in-flight rotation before tearing down so the user's last
+      // target actually lands on the speaker.
+      if (state.pendingDelta !== 0 && heosClient && heosClient.isConnected()) {
+        this._flush(message.context, heosClient, vsd);
+      }
     }
     this._state.delete(message.context);
   },

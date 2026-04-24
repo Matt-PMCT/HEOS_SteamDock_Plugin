@@ -23,7 +23,10 @@ jobs:
       - run: npm run package
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        # Pinned to a commit SHA because this third-party action runs with
+        # `contents: write`. Bump by resolving a new tag's SHA from GitHub,
+        # not by editing the `@v2` tag pointer (which is mutable).
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           files: dist/com.vsd.craft.heos.sdPlugin.zip
           generate_release_notes: true

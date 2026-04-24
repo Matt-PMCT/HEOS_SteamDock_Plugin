@@ -169,6 +169,24 @@ class HeosClient {
       this.socket = null;
     }
 
+    // Reset cached device state when switching to a new speaker so actions can't
+    // read last-speaker's playState/volume/groups between connect() and init-complete.
+    if (this.ip !== ip) {
+      this.playerState = {
+        playState: 'stop',
+        volume: 0,
+        mute: false,
+        media: null,
+        repeatMode: 'off',
+        shuffleMode: 'off'
+      };
+      this.groupState = {};
+      this.players = [];
+      this.groups = [];
+      this.musicSources = [];
+      this.signedIn = false;
+    }
+
     this._setState(ConnectionState.CONNECTING);
     this.ip = ip;
     this.parser.reset();
@@ -374,7 +392,11 @@ class HeosClient {
   startHeartbeat() {
     this.stopHeartbeat();
     this.heartbeatTimer = setInterval(() => {
-      this.enqueue('heos://system/heart_beat').catch(() => {});
+      this.enqueue('heos://system/heart_beat').catch(() => {
+        // Heartbeat failed: socket may be half-open (writes black-holed, no FIN received).
+        // Destroy the socket to force the close handler to fire and schedule a reconnect.
+        if (this.socket) this.socket.destroy();
+      });
     }, 30000);
   }
 
@@ -485,8 +507,14 @@ class HeosClient {
       return;
     }
     if (msg.heos.command !== this.pending.matchKey) {
-      // Log at error level -- mismatch means queue is blocked until 5s timeout
+      // Mismatch indicates a queue desync. Reject the pending command and keep moving
+      // instead of stalling throughput for 5s waiting on the per-command timeout.
       console.error('[HEOS-Client] Response mismatch:', msg.heos.command, '!=', this.pending.matchKey);
+      const p = this.pending;
+      this.pending = null;
+      clearTimeout(p.timeoutId);
+      p.reject(new Error('Response mismatch: expected ' + p.matchKey + ', got ' + msg.heos.command));
+      this.sendNext();
       return;
     }
 
@@ -622,25 +650,48 @@ class HeosClient {
   }
 
   async pollPlayerState(pid) {
-    const stateResp = await this.enqueue(`heos://player/get_play_state?pid=${pid}`);
-    const volResp = await this.enqueue(`heos://player/get_volume?pid=${pid}`);
-    const muteResp = await this.enqueue(`heos://player/get_mute?pid=${pid}`);
-    const mediaResp = await this.enqueue(`heos://player/get_now_playing_media?pid=${pid}`);
-    const modeResp = await this.enqueue(`heos://player/get_play_mode?pid=${pid}`);
+    // Use allSettled so one flaky subcommand doesn't abort the whole init.
+    // Fields whose fetch failed keep their previous (or default) values.
+    const results = await Promise.all([
+      this.enqueue(`heos://player/get_play_state?pid=${pid}`).catch(err => ({ _err: err })),
+      this.enqueue(`heos://player/get_volume?pid=${pid}`).catch(err => ({ _err: err })),
+      this.enqueue(`heos://player/get_mute?pid=${pid}`).catch(err => ({ _err: err })),
+      this.enqueue(`heos://player/get_now_playing_media?pid=${pid}`).catch(err => ({ _err: err })),
+      this.enqueue(`heos://player/get_play_mode?pid=${pid}`).catch(err => ({ _err: err }))
+    ]);
+    const [stateResp, volResp, muteResp, mediaResp, modeResp] = results;
 
-    const stateMsg = parseHeosMessage(stateResp.heos.message);
-    const volMsg = parseHeosMessage(volResp.heos.message);
-    const muteMsg = parseHeosMessage(muteResp.heos.message);
-    const modeMsg = parseHeosMessage(modeResp.heos.message);
+    const next = { ...this.playerState };
 
-    this.playerState = {
-      playState: stateMsg.state,
-      volume: parseInt(volMsg.level, 10),
-      mute: muteMsg.state === 'on',
-      media: mediaResp.payload || null,
-      repeatMode: modeMsg.repeat || 'off',
-      shuffleMode: modeMsg.shuffle || 'off'
-    };
+    if (!stateResp._err) {
+      next.playState = parseHeosMessage(stateResp.heos.message).state;
+    } else {
+      console.warn('[HEOS-Client] pollPlayerState: get_play_state failed:', stateResp._err.message);
+    }
+    if (!volResp._err) {
+      next.volume = parseInt(parseHeosMessage(volResp.heos.message).level, 10);
+    } else {
+      console.warn('[HEOS-Client] pollPlayerState: get_volume failed:', volResp._err.message);
+    }
+    if (!muteResp._err) {
+      next.mute = parseHeosMessage(muteResp.heos.message).state === 'on';
+    } else {
+      console.warn('[HEOS-Client] pollPlayerState: get_mute failed:', muteResp._err.message);
+    }
+    if (!mediaResp._err) {
+      next.media = mediaResp.payload || null;
+    } else {
+      console.warn('[HEOS-Client] pollPlayerState: get_now_playing_media failed:', mediaResp._err.message);
+    }
+    if (!modeResp._err) {
+      const modeMsg = parseHeosMessage(modeResp.heos.message);
+      next.repeatMode = modeMsg.repeat || 'off';
+      next.shuffleMode = modeMsg.shuffle || 'off';
+    } else {
+      console.warn('[HEOS-Client] pollPlayerState: get_play_mode failed:', modeResp._err.message);
+    }
+
+    this.playerState = next;
   }
 
   // --- HEOS Event Handling ---
@@ -650,8 +701,10 @@ class HeosClient {
     const params = parseHeosMessage(msg.heos.message);
     const pid = params.pid ? parseInt(params.pid, 10) : null;
 
-    // Only process events for our target player (or global events with no pid)
-    if (pid !== null && pid !== this.playerId) return;
+    // Only process events for our target player (or global events with no pid).
+    // During init, this.playerId is null — let events through so we don't drop the
+    // first register_for_change_events burst. Once playerId is set, filter strictly.
+    if (pid !== null && this.playerId !== null && pid !== this.playerId) return;
 
     switch (eventName) {
       case 'event/player_state_changed':

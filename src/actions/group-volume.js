@@ -129,10 +129,13 @@ module.exports = {
     }
   },
 
-  onWillDisappear(message) {
+  onWillDisappear(message, { heosClient, vsd }) {
     const state = this._state.get(message.context);
     if (state) {
       clearTimeout(state.debounceTimer);
+      if (state.pendingDelta !== 0 && heosClient && heosClient.isConnected()) {
+        this._flush(message.context, heosClient, vsd);
+      }
     }
     this._state.delete(message.context);
   },
@@ -149,6 +152,17 @@ module.exports = {
           const gs = heosClient.groupState[eventGid];
           const muted = params.mute !== undefined ? params.mute === 'on' : (gs ? gs.mute : false);
           this._setDisplay(ctx, vol, muted, vsd);
+        }
+      }
+    } else if (eventName === 'event/groups_changed') {
+      // Group composition changed — any pending delta targets a gid that may no
+      // longer exist or may no longer contain our player. Drop it and force the
+      // next rotate to re-resolve.
+      for (const ctx of contexts) {
+        const state = this._state.get(ctx);
+        if (state) {
+          state.pendingDelta = 0;
+          state.resolvedGid = null;
         }
       }
     }
