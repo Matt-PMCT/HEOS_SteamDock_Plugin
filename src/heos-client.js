@@ -1,4 +1,5 @@
 const net = require('net');
+const logger = require('./logger');
 
 // --- HEOS Message Helpers ---
 
@@ -43,7 +44,7 @@ class ResponseParser {
         messages.push(JSON.parse(line));
       } catch (e) {
         // Skip ONLY this bad line. Do NOT flush the buffer.
-        console.error('[HEOS-Client] Failed to parse:', line.substring(0, 100));
+        logger.error('[HEOS-Client] Failed to parse:', line.substring(0, 100));
       }
     }
     return messages;
@@ -127,7 +128,7 @@ class HeosClient {
     this.state = newState;
     if (old !== newState) {
       for (const fn of this.stateListeners) {
-        try { fn(newState, old); } catch (e) { console.error('[HEOS-Client] State listener error:', e); }
+        try { fn(newState, old); } catch (e) { logger.error('[HEOS-Client] State listener error:', e); }
       }
     }
   }
@@ -137,12 +138,12 @@ class HeosClient {
   connect(ip) {
     // Validate IPv4 format
     if (!ip || !/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip)) {
-      console.error('[HEOS-Client] Invalid IP address:', ip);
+      logger.error('[HEOS-Client] Invalid IP address:', ip);
       return;
     }
     const octets = ip.split('.').map(Number);
     if (octets.some(o => o < 0 || o > 255)) {
-      console.error('[HEOS-Client] Invalid IP address (octet out of range):', ip);
+      logger.error('[HEOS-Client] Invalid IP address (octet out of range):', ip);
       return;
     }
 
@@ -201,7 +202,7 @@ class HeosClient {
     this.socket.setTimeout(5000); // Connection timeout
 
     this.socket.on('connect', () => {
-      console.log('[HEOS-Client] Connected to', ip);
+      logger.log('[HEOS-Client] Connected to', ip);
       this._setState(ConnectionState.CONNECTED);
       this.socket.setTimeout(0); // Clear connection timeout; heartbeat handles idle detection
       this.reconnectDelay = 1000; // Reset backoff
@@ -221,12 +222,12 @@ class HeosClient {
     });
 
     this.socket.on('error', (err) => {
-      console.error('[HEOS-Client] Socket error:', err.message);
+      logger.error('[HEOS-Client] Socket error:', err.message);
       // Do NOT reconnect here -- the close event follows
     });
 
     this.socket.on('close', () => {
-      console.log('[HEOS-Client] Connection closed');
+      logger.log('[HEOS-Client] Connection closed');
       this._setState(ConnectionState.DISCONNECTED);
       this.stopHeartbeat();
       this.rejectPending('Connection closed');
@@ -242,7 +243,7 @@ class HeosClient {
     });
 
     this.socket.on('timeout', () => {
-      console.error('[HEOS-Client] Connection timeout');
+      logger.error('[HEOS-Client] Connection timeout');
       this.socket.destroy();
     });
 
@@ -372,10 +373,10 @@ class HeosClient {
     this.reconnectAttempts++;
 
     if (this.reconnectAttempts === 10) {
-      console.warn('[HEOS-Client] 10 failed reconnection attempts. Speaker IP may have changed (DHCP). Check IP in Property Inspector.');
+      logger.log('[HEOS-Client] 10 failed reconnection attempts. Speaker IP may have changed (DHCP). Check IP in Property Inspector.');
     }
 
-    console.log(`[HEOS-Client] Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts})`);
+    logger.log(`[HEOS-Client] Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect(this.ip);
@@ -450,7 +451,7 @@ class HeosClient {
     // Write to socket
     this.socket.write(this.pending.command + '\r\n', (err) => {
       if (err) {
-        console.error('[HEOS-Client] Write error:', err.message);
+        logger.error('[HEOS-Client] Write error:', err.message);
         // Socket error/close handlers will reject pending and schedule reconnect
       }
     });
@@ -468,7 +469,7 @@ class HeosClient {
 
   routeMessage(msg) {
     if (!msg || !msg.heos || !msg.heos.command) {
-      console.error('[HEOS-Client] Malformed message:', JSON.stringify(msg));
+      logger.error('[HEOS-Client] Malformed message:', JSON.stringify(msg));
       return;
     }
 
@@ -503,13 +504,13 @@ class HeosClient {
 
   resolveQueuedCommand(msg) {
     if (!this.pending) {
-      console.warn('[HEOS-Client] Orphaned response (no pending command):', msg.heos.command);
+      logger.log('[HEOS-Client] Orphaned response (no pending command):', msg.heos.command);
       return;
     }
     if (msg.heos.command !== this.pending.matchKey) {
       // Mismatch indicates a queue desync. Reject the pending command and keep moving
       // instead of stalling throughput for 5s waiting on the per-command timeout.
-      console.error('[HEOS-Client] Response mismatch:', msg.heos.command, '!=', this.pending.matchKey);
+      logger.error('[HEOS-Client] Response mismatch:', msg.heos.command, '!=', this.pending.matchKey);
       const p = this.pending;
       this.pending = null;
       clearTimeout(p.timeoutId);
@@ -580,7 +581,7 @@ class HeosClient {
       this.signedIn = accountMsg.signed_in === 'true' || !!accountMsg.un;
 
       if (!this.signedIn) {
-        console.warn('[HEOS-Client] Not signed in. Streaming presets require sign-in via Property Inspector.');
+        logger.log('[HEOS-Client] Not signed in. Streaming presets require sign-in via Property Inspector.');
       }
 
       // 3. Get all players
@@ -589,12 +590,12 @@ class HeosClient {
 
       // 3b. Retry once after 2s if empty (CLI module may still be spinning up)
       if (this.players.length === 0) {
-        console.warn('[HEOS-Client] No players found. Retrying after 2s delay...');
+        logger.log('[HEOS-Client] No players found. Retrying after 2s delay...');
         await new Promise(resolve => setTimeout(resolve, 2000));
         const retryResp = await this.enqueue('heos://player/get_players');
         this.players = retryResp.payload || [];
         if (this.players.length === 0) {
-          console.warn('[HEOS-Client] Still no players found. User may need to check network.');
+          logger.log('[HEOS-Client] Still no players found. User may need to check network.');
         }
       }
 
@@ -620,7 +621,7 @@ class HeosClient {
       // 5. Register for change events
       await this.enqueue('heos://system/register_for_change_events?enable=on');
 
-      console.log('[HEOS-Client] Init sequence complete. Player:', this.playerId, 'State:', this.playerState.playState);
+      logger.log('[HEOS-Client] Init sequence complete. Player:', this.playerId, 'State:', this.playerState.playState);
       // Resolve init promise on success
       if (this._initResolve) {
         this._initResolve();
@@ -629,7 +630,7 @@ class HeosClient {
       }
       if (this.onInitComplete) this.onInitComplete();
     } catch (err) {
-      console.error('[HEOS-Client] Init sequence failed:', err.message);
+      logger.error('[HEOS-Client] Init sequence failed:', err.message);
       // Reject init promise so callers know it failed
       if (this._initReject) {
         this._initReject(err);
@@ -666,29 +667,29 @@ class HeosClient {
     if (!stateResp._err) {
       next.playState = parseHeosMessage(stateResp.heos.message).state;
     } else {
-      console.warn('[HEOS-Client] pollPlayerState: get_play_state failed:', stateResp._err.message);
+      logger.log('[HEOS-Client] pollPlayerState: get_play_state failed:', stateResp._err.message);
     }
     if (!volResp._err) {
       next.volume = parseInt(parseHeosMessage(volResp.heos.message).level, 10);
     } else {
-      console.warn('[HEOS-Client] pollPlayerState: get_volume failed:', volResp._err.message);
+      logger.log('[HEOS-Client] pollPlayerState: get_volume failed:', volResp._err.message);
     }
     if (!muteResp._err) {
       next.mute = parseHeosMessage(muteResp.heos.message).state === 'on';
     } else {
-      console.warn('[HEOS-Client] pollPlayerState: get_mute failed:', muteResp._err.message);
+      logger.log('[HEOS-Client] pollPlayerState: get_mute failed:', muteResp._err.message);
     }
     if (!mediaResp._err) {
       next.media = mediaResp.payload || null;
     } else {
-      console.warn('[HEOS-Client] pollPlayerState: get_now_playing_media failed:', mediaResp._err.message);
+      logger.log('[HEOS-Client] pollPlayerState: get_now_playing_media failed:', mediaResp._err.message);
     }
     if (!modeResp._err) {
       const modeMsg = parseHeosMessage(modeResp.heos.message);
       next.repeatMode = modeMsg.repeat || 'off';
       next.shuffleMode = modeMsg.shuffle || 'off';
     } else {
-      console.warn('[HEOS-Client] pollPlayerState: get_play_mode failed:', modeResp._err.message);
+      logger.log('[HEOS-Client] pollPlayerState: get_play_mode failed:', modeResp._err.message);
     }
 
     this.playerState = next;
@@ -761,7 +762,7 @@ class HeosClient {
       }
 
       case 'event/player_playback_error':
-        console.error('[HEOS-Client] Playback error for player:', pid);
+        logger.error('[HEOS-Client] Playback error for player:', pid);
         this.playerState.playState = 'stop';
         break;
 

@@ -279,6 +279,27 @@
     </div>
   </div>
 
+  <!-- Section 7.5: Diagnostics (always visible) -->
+  <div id="diagnostics-section">
+    <div class="sdpi-heading">Diagnostics</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-checkbox-item">
+        <input type="checkbox" id="debug-logging" />
+        <label for="debug-logging">Enable debug logging to file</label>
+      </div>
+      <div class="sdpi-item-hint" id="debug-log-path-hint" style="padding-left:0;">
+        Off by default. When on, the plugin appends diagnostic output (HEOS
+        commands, reconnects, album art fetches, errors) to a file you can open
+        in any text editor. Rotates once past 1&nbsp;MB.
+      </div>
+      <div class="sdpi-item" id="debug-log-path-row" style="display:none;">
+        <div class="sdpi-item-label">Log file</div>
+        <input class="sdpi-item-value" type="text" id="debug-log-path" readonly
+               style="font-family:monospace;font-size:11px;" />
+      </div>
+    </div>
+  </div>
+
   <!-- Section 8: Account status (read-only; sign in via HEOS app) -->
   <div id="account-section" style="display:none;">
     <div class="sdpi-heading">HEOS Account</div>
@@ -397,6 +418,18 @@
       } else {
         statusEl.textContent = 'Not connected';
         statusEl.style.color = '';
+      }
+
+      // Diagnostics: debug logging toggle + log file path
+      var debugCb = document.getElementById('debug-logging');
+      if (debugCb) debugCb.checked = globalSettings.debugLogging === true;
+      var logPathRow = document.getElementById('debug-log-path-row');
+      var logPathInput = document.getElementById('debug-log-path');
+      if (globalSettings._piLogPath) {
+        logPathInput.value = globalSettings._piLogPath;
+        logPathRow.style.display = '';
+      } else {
+        logPathRow.style.display = 'none';
       }
 
       // Account status
@@ -838,6 +871,12 @@
 
     document.getElementById('group-volume-select').addEventListener('change', function () {
       saveSettings({ groupGid: this.value ? parseInt(this.value, 10) : '' });
+    });
+
+    // --- Diagnostics ---
+
+    document.getElementById('debug-logging').addEventListener('change', function () {
+      saveGlobalSettings({ debugLogging: this.checked });
     });
 
     // --- Helpers ---

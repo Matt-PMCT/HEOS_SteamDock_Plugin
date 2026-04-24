@@ -1,4 +1,5 @@
 const { fetchAlbumArt } = require('../image-utils');
+const logger = require('../logger');
 
 // Track which contexts have album art enabled (per-action setting)
 const _albumArtEnabled = new Map(); // context -> boolean
@@ -16,14 +17,23 @@ function updateMediaDisplay(contexts, heosClient, vsd) {
   const media = heosClient.playerState.media;
   const title = formatNowPlaying(media);
 
+  // One-line diagnostic: lets us tell "no image_url from speaker" apart from
+  // "fetched OK but VSD Craft won't render". Safe to leave in — it's one line
+  // per media change, not per event.
+  logger.log('[play-pause] media:', media
+    ? { has_url: !!media.image_url, url_prefix: (media.image_url || '').substring(0, 60), song: media.song, source: media.station }
+    : null);
+
   for (const ctx of contexts) {
     const showArt = _albumArtEnabled.get(ctx) !== false; // default true
 
     if (showArt && media && media.image_url) {
-      fetchAlbumArt(media.image_url, title).then(svgUri => {
-        if (svgUri) {
-          vsd.setImage(ctx, svgUri);
-          vsd.setTitle(ctx, '');
+      fetchAlbumArt(media.image_url).then(uri => {
+        if (uri) {
+          // Art loaded: show it as the key image; the manifest's state
+          // TitleAlignment places the song title in the bottom band.
+          vsd.setImage(ctx, uri);
+          vsd.setTitle(ctx, title);
         } else {
           vsd.setImage(ctx, null);
           vsd.setTitle(ctx, title);

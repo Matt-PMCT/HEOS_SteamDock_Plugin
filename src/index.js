@@ -1,5 +1,11 @@
+const os = require('os');
+const path = require('path');
 const WebSocket = require('ws');
+const logger = require('./logger');
 const { HeosClient, ConnectionState, parseHeosMessage } = require('./heos-client');
+
+// Debug log file — users toggle `debugLogging` in the PI to enable writes here.
+const LOG_PATH = path.join(os.homedir(), 'heos-plugin.log');
 const playPause = require('./actions/play-pause');
 const nextPrev = require('./actions/next-prev');
 const mute = require('./actions/mute');
@@ -25,7 +31,8 @@ const contextMap = new Map(); // Map<context, { action, settings }>
 // rather than letting the PI clobber us.
 const PLUGIN_OWNED_KEYS = [
   '_piPlayers', '_piGroups', '_piSources', '_piSignedIn',
-  '_piError', '_piDiscoveryResults', '_piDiscoveryRequestId'
+  '_piError', '_piDiscoveryResults', '_piDiscoveryRequestId',
+  '_piLogPath'
 ];
 
 // VSD Craft lifecycle events we receive but don't act on — log them once in
@@ -253,6 +260,15 @@ function dispatchEvent(message) {
       }
       globalSettings = merged;
 
+      // Apply debug logging toggle from user settings.
+      logger.setEnabled(globalSettings.debugLogging === true, LOG_PATH);
+
+      // Advertise the log file path to the PI so it can display it verbatim.
+      if (globalSettings._piLogPath !== LOG_PATH) {
+        globalSettings._piLogPath = LOG_PATH;
+        setGlobalSettings(globalSettings);
+      }
+
       // SSDP discovery request from PI
       if (discoverRequested) {
         const requestId = newSettings._discoverRequest;
@@ -268,7 +284,7 @@ function dispatchEvent(message) {
             setGlobalSettings(globalSettings);
           })
           .catch(err => {
-            console.error('[HEOS-Plugin] SSDP discovery failed:', err.message);
+            logger.error('[HEOS-Plugin] SSDP discovery failed:', err.message);
             globalSettings = {
               ...globalSettings,
               _piDiscoveryResults: [],
@@ -294,7 +310,7 @@ function dispatchEvent(message) {
     }
 
     case 'systemDidWakeUp':
-      console.log('[HEOS-Plugin] System woke up, reconnecting...');
+      logger.log('[HEOS-Plugin] System woke up, reconnecting...');
       heosClient.reconnect();
       break;
 
@@ -303,16 +319,16 @@ function dispatchEvent(message) {
       break;
 
     case 'propertyInspectorDidAppear':
-      console.log('[HEOS-Plugin] PI appeared for', action);
+      logger.log('[HEOS-Plugin] PI appeared for', action);
       break;
 
     case 'propertyInspectorDidDisappear':
-      console.log('[HEOS-Plugin] PI disappeared for', action);
+      logger.log('[HEOS-Plugin] PI disappeared for', action);
       break;
 
     default:
       if (!SILENT_EVENTS.has(event)) {
-        console.log('[HEOS-Plugin] Unknown event:', event);
+        logger.log('[HEOS-Plugin] Unknown event:', event);
       }
       break;
   }
@@ -324,7 +340,7 @@ function connectToVsdCraft(args) {
   ws = new WebSocket('ws://127.0.0.1:' + args.port);
 
   ws.on('open', () => {
-    console.log('[HEOS-Plugin] Connected to VSD Craft');
+    logger.log('[HEOS-Plugin] Connected to VSD Craft');
     // Register the plugin
     ws.send(JSON.stringify({
       event: args.registerEvent,
@@ -339,17 +355,17 @@ function connectToVsdCraft(args) {
       const message = JSON.parse(data.toString());
       dispatchEvent(message);
     } catch (e) {
-      console.error('[HEOS-Plugin] Failed to parse message:', e.message);
+      logger.error('[HEOS-Plugin] Failed to parse message:', e.message);
     }
   });
 
   ws.on('close', () => {
-    console.log('[HEOS-Plugin] WebSocket closed, exiting');
+    logger.log('[HEOS-Plugin] WebSocket closed, exiting');
     process.exit(0);
   });
 
   ws.on('error', (err) => {
-    console.error('[HEOS-Plugin] WebSocket error:', err.message);
+    logger.error('[HEOS-Plugin] WebSocket error:', err.message);
     process.exit(1);
   });
 }

@@ -1,22 +1,12 @@
 const http = require('http');
 const https = require('https');
+const logger = require('./logger');
 
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB cap — album art coming from the internet
 const REQUEST_TIMEOUT_MS = 3000;
 
 let _cachedUrl = null;
-let _cachedTitle = null;
-let _cachedSvg = null;
-
-function escapeXml(str) {
-  return str
-    .replace(/[\x00-\x1F\x7F]/g, '') // strip control chars that break SVG renderers
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
-}
+let _cachedUri = null;
 
 function fetchImage(url, redirectsLeft = 3) {
   return new Promise((resolve, reject) => {
@@ -89,42 +79,35 @@ function fetchImage(url, redirectsLeft = 3) {
   });
 }
 
-function buildAlbumArtSvg(base64Data, contentType, title) {
-  const mimeType = contentType.split(';')[0].trim();
-  let svg = '<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72">' +
-    `<image href="data:${mimeType};base64,${base64Data}" width="72" height="72"/>`;
-
-  if (title) {
-    svg += '<rect y="54" width="72" height="18" fill="rgba(0,0,0,0.7)"/>' +
-      `<text x="36" y="66" font-size="8" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(title)}</text>`;
-  }
-
-  svg += '</svg>';
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-}
-
 /**
- * Fetch album art and return an SVG data URI with the image embedded as base64.
- * Returns null on any error. Caches the last successful result by URL.
+ * Fetch album art and return a raw base64 data URI suitable for setImage().
+ * The previous implementation wrapped the image in SVG to overlay a title,
+ * which ballooned the payload (URL-encoded SVG around base64 PNG ≈ 3× the raw
+ * size) and VSD Craft's setImage renderer silently discarded the oversized
+ * frames. Title overlay is handled separately via vsd.setTitle — the manifest
+ * declares TitleAlignment per state so VSD Craft overlays the text natively.
+ * Returns null on any error. Caches the last successful URI by URL.
  */
-function fetchAlbumArt(imageUrl, title) {
+function fetchAlbumArt(imageUrl) {
   if (!imageUrl) return Promise.resolve(null);
 
-  if (imageUrl === _cachedUrl && title === _cachedTitle && _cachedSvg) {
-    return Promise.resolve(_cachedSvg);
+  if (imageUrl === _cachedUrl && _cachedUri) {
+    return Promise.resolve(_cachedUri);
   }
 
   return fetchImage(imageUrl)
     .then(({ buffer, contentType }) => {
       const base64Data = buffer.toString('base64');
-      const svg = buildAlbumArtSvg(base64Data, contentType, title);
+      const mimeType = (contentType || 'image/jpeg').split(';')[0].trim();
+      const result = `data:${mimeType};base64,${base64Data}`;
       _cachedUrl = imageUrl;
-      _cachedTitle = title;
-      _cachedSvg = svg;
-      return svg;
+      _cachedUri = result;
+      logger.log('[image-utils] Album art loaded:', imageUrl.substring(0, 80),
+        'bytes=' + buffer.length, 'uri_len=' + result.length, 'mime=' + mimeType);
+      return result;
     })
     .catch((err) => {
-      console.error('[image-utils] Failed to fetch album art:', err.message);
+      logger.error('[image-utils] Failed to fetch album art:', err.message, 'url=' + imageUrl.substring(0, 80));
       return null;
     });
 }

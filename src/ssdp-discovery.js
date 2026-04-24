@@ -1,4 +1,5 @@
 const dgram = require('dgram');
+const logger = require('./logger');
 
 const SSDP_MULTICAST_ADDR = '239.255.255.250';
 const SSDP_PORT = 1900;
@@ -36,7 +37,7 @@ function discoverHeosSpeakers(timeoutMs = 5000) {
     });
 
     socket.on('error', (err) => {
-      console.error('[SSDP] Socket error:', err.message);
+      logger.error('[SSDP] Socket error:', err.message);
       if (closed) return;
       closed = true;
       socket.close();
@@ -49,12 +50,12 @@ function discoverHeosSpeakers(timeoutMs = 5000) {
       try {
         socket.addMembership(SSDP_MULTICAST_ADDR);
       } catch (e) {
-        console.error('[SSDP] Failed to join multicast group:', e.message);
+        logger.error('[SSDP] Failed to join multicast group:', e.message);
       }
       try {
         socket.send(searchMessage, 0, searchMessage.length, SSDP_PORT, SSDP_MULTICAST_ADDR);
       } catch (e) {
-        console.error('[SSDP] Send failed:', e.message);
+        logger.error('[SSDP] Send failed:', e.message);
       }
 
       // Send a second search after 1s for reliability
@@ -63,7 +64,7 @@ function discoverHeosSpeakers(timeoutMs = 5000) {
         try {
           socket.send(searchMessage, 0, searchMessage.length, SSDP_PORT, SSDP_MULTICAST_ADDR);
         } catch (e) {
-          console.error('[SSDP] Second send failed:', e.message);
+          logger.error('[SSDP] Second send failed:', e.message);
         }
       }, 1000);
     });
