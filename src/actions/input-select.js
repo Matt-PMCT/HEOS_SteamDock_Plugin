@@ -1,4 +1,14 @@
 const { heosEncode } = require('../heos-client');
+const { buildButtonSvg } = require('../button-render');
+const { consumeButtonRefresh } = require('../button-refresh');
+
+function renderButton(context, settings, vsd) {
+  const label = settings.buttonTitle != null
+    ? String(settings.buttonTitle)
+    : (settings.inputLabel || 'Input');
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'input'));
+  vsd.setTitle(context, '');
+}
 
 module.exports = {
   actionUUID: 'com.vsd.craft.heos.inputselect',
@@ -18,12 +28,14 @@ module.exports = {
   },
 
   onWillAppear(message, { vsd }) {
-    const settings = message.payload.settings || {};
-    vsd.setTitle(message.context, settings.inputLabel || 'Input');
+    renderButton(message.context, message.payload.settings || {}, vsd);
   },
 
   onDidReceiveSettings(message, { vsd }) {
-    const settings = message.payload.settings || {};
-    vsd.setTitle(message.context, settings.inputLabel || 'Input');
+    renderButton(message.context, message.payload.settings || {}, vsd);
+  },
+
+  onGlobalSettingsChange({ contexts, vsd }) {
+    consumeButtonRefresh(module.exports.actionUUID, contexts, vsd, renderButton);
   }
 };

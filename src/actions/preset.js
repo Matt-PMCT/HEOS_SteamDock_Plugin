@@ -1,3 +1,14 @@
+const { buildButtonSvg } = require('../button-render');
+const { consumeButtonRefresh } = require('../button-refresh');
+
+function renderButton(context, settings, vsd) {
+  const presetNumber = parseInt(settings.presetNumber, 10) || 1;
+  const fallback = 'P' + presetNumber;
+  const label = settings.buttonTitle != null ? String(settings.buttonTitle) : fallback;
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'star'));
+  vsd.setTitle(context, '');
+}
+
 module.exports = {
   actionUUID: 'com.vsd.craft.heos.preset',
 
@@ -25,14 +36,14 @@ module.exports = {
   },
 
   onWillAppear(message, { vsd }) {
-    const settings = message.payload.settings || {};
-    const presetNumber = parseInt(settings.presetNumber, 10) || 1;
-    vsd.setTitle(message.context, `P${presetNumber}`);
+    renderButton(message.context, message.payload.settings || {}, vsd);
   },
 
   onDidReceiveSettings(message, { vsd }) {
-    const settings = message.payload.settings || {};
-    const presetNumber = parseInt(settings.presetNumber, 10) || 1;
-    vsd.setTitle(message.context, `P${presetNumber}`);
+    renderButton(message.context, message.payload.settings || {}, vsd);
+  },
+
+  onGlobalSettingsChange({ contexts, vsd }) {
+    consumeButtonRefresh(module.exports.actionUUID, contexts, vsd, renderButton);
   }
 };

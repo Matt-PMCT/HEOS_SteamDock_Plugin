@@ -1,6 +1,6 @@
 {
   "Name": "HEOS Control",
-  "Version": "1.0.3",
+  "Version": "1.1.0",
   "Author": "Matt Emerson",
   "Description": "Control Denon HEOS speakers from your StreamDock. Play, pause, skip tracks, adjust volume with knobs, mute, and launch favorite presets.",
   "Icon": "images/plugin-icon.png",
@@ -134,7 +134,9 @@
       "SupportedInMultiActions": true,
       "Controllers": ["Keypad"],
       "Settings": {
-        "presetNumber": 1
+        "presetNumber": 1,
+        "iconColor": "#4a90e2",
+        "iconGlyph": "star"
       },
       "States": [
         {
@@ -156,7 +158,9 @@
       "Settings": {
         "groupPids": [],
         "leaderPid": null,
-        "groupLabel": ""
+        "groupLabel": "",
+        "iconColor": "#4a90e2",
+        "iconGlyph": "group"
       },
       "States": [
         {
@@ -249,7 +253,9 @@
       "Controllers": ["Keypad"],
       "Settings": {
         "inputName": "",
-        "inputLabel": ""
+        "inputLabel": "",
+        "iconColor": "#4a90e2",
+        "iconGlyph": "input"
       },
       "States": [
         {
@@ -270,7 +276,9 @@
       "Controllers": ["Keypad"],
       "Settings": {
         "profileId": "",
-        "profileLabel": ""
+        "profileLabel": "",
+        "iconColor": "#4a90e2",
+        "iconGlyph": "home"
       },
       "States": [
         {
@@ -278,6 +286,29 @@
           "TitleAlignment": "bottom",
           "FontSize": "13",
           "Title": "Profile"
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.playurl",
+      "Name": "Play On Demand",
+      "Icon": "images/actions/play-url.png",
+      "Tooltip": "Play the latest episode of a podcast RSS feed, or a direct audio URL",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": true,
+      "Controllers": ["Keypad"],
+      "Settings": {
+        "sourceUrl": "",
+        "buttonTitle": "On Demand",
+        "iconColor": "#4a90e2",
+        "iconGlyph": "play"
+      },
+      "States": [
+        {
+          "Image": "images/actions/play-url.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "13",
+          "Title": "On Demand"
         }
       ]
     }

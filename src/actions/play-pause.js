@@ -115,15 +115,36 @@ function clipLine(text) {
     : text;
 }
 
+// HEOS reports a generic "URL Stream" for song & artist when playing a
+// `play_stream` URL (arbitrary audio). Detect that so the play-url override
+// metadata can take over.
+function isGenericStreamLabel(text) {
+  const t = (text || '').trim();
+  if (!t) return true;
+  return /^url\s*stream$/i.test(t);
+}
+
 // Title shown below/over the artwork. If both song and artist are available
 // they go on separate lines (line 1 = song, line 2 = artist, each clipped
 // independently). If only one, wrap it across both lines. Falls back to the
 // state-action label ("Play" paused / "Pause" playing) when nothing is
 // playing so the button never shows stale text.
-function formatTitleLines(media, isPlaying) {
+function formatTitleLines(media, isPlaying, override) {
+  const song = (media && media.song || '').trim();
+  const artist = (media && media.artist || '').trim();
+
+  // Substitute play-url's override when HEOS is reporting the generic URL
+  // Stream placeholder. If the user later plays real content (Spotify, preset,
+  // etc.), HEOS reports real song/artist and the override stays dormant.
+  if (override && isGenericStreamLabel(song) && isGenericStreamLabel(artist)) {
+    const os = (override.song || '').trim();
+    const oa = (override.artist || '').trim();
+    if (os && oa) return [clipLine(os), clipLine(oa)];
+    const candidate = os || oa;
+    if (candidate) return wrapTitle(candidate);
+  }
+
   if (media) {
-    const song = (media.song || '').trim();
-    const artist = (media.artist || '').trim();
     if (song && artist) return [clipLine(song), clipLine(artist)];
     const candidate = song || artist;
     if (candidate) return wrapTitle(candidate);
@@ -134,7 +155,7 @@ function formatTitleLines(media, isPlaying) {
 function updateMediaDisplay(contexts, heosClient, vsd) {
   const media = heosClient.playerState.media;
   const isPlaying = heosClient.playerState.playState === 'play';
-  const titleLines = formatTitleLines(media, isPlaying);
+  const titleLines = formatTitleLines(media, isPlaying, heosClient.streamMetadataOverride);
   const titleJoined = titleLines.join('\n'); // for native setTitle
   const showArt = isAlbumArtEnabled(vsd);
 

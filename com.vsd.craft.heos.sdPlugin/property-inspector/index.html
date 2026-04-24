@@ -253,6 +253,65 @@
     </div>
   </div>
 
+  <!-- Section 6.5: Play On Demand settings (ONLY for playurl action) -->
+  <div id="play-url-section" style="display:none;">
+    <div class="sdpi-heading">Play On Demand Settings</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Source URL</div>
+        <input class="sdpi-item-value" type="text" id="play-url-source"
+               placeholder="https://feeds.npr.org/500005/podcast.xml" />
+      </div>
+      <div class="sdpi-item-hint">
+        Paste a podcast RSS feed URL (the newest episode will play) or a direct
+        MP3/AAC/WMA stream URL. Example: NPR News Now feed above plays the latest
+        hourly newscast.
+      </div>
+
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Label</div>
+        <input class="sdpi-item-value" type="text" id="play-url-title"
+               placeholder="e.g. NPR News" />
+      </div>
+      <div class="sdpi-item-hint">Button title. Leave blank for "On Demand".</div>
+    </div>
+  </div>
+
+  <!-- Shared Appearance settings (shown for any trigger-style action) -->
+  <div id="appearance-section" style="display:none;">
+    <div class="sdpi-heading">Appearance</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Color</div>
+        <input class="sdpi-item-value" type="color" id="appearance-color"
+               value="#4a90e2" style="padding:0;height:28px;" />
+      </div>
+      <div class="sdpi-item-hint">Background color for the button tile.</div>
+
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Icon</div>
+        <select class="sdpi-item-value" id="appearance-glyph">
+          <option value="none">None (just color)</option>
+          <option value="play">Play triangle</option>
+          <option value="pause">Pause bars</option>
+          <option value="next">Next</option>
+          <option value="prev">Previous</option>
+          <option value="music">Music note</option>
+          <option value="mic">Microphone</option>
+          <option value="radio">Radio tower</option>
+          <option value="speaker">Speaker</option>
+          <option value="news">Newspaper</option>
+          <option value="group">People (group)</option>
+          <option value="input">Input / HDMI</option>
+          <option value="home">House</option>
+          <option value="star">Star</option>
+          <option value="heart">Heart</option>
+        </select>
+      </div>
+      <div class="sdpi-item-hint">Tip: clear the label field above to drop the title band and use the full tile for color + icon.</div>
+    </div>
+  </div>
+
   <!-- Section 7: Profile Management (shown when profiles exist or for profileswitch) -->
   <div id="profiles-section" style="display:none;">
     <div class="sdpi-heading">Speaker Profiles</div>
@@ -522,6 +581,32 @@
         profileSwitchSection.style.display = 'none';
       }
 
+      var playUrlSection = document.getElementById('play-url-section');
+      if (currentAction === 'com.vsd.craft.heos.playurl') {
+        playUrlSection.style.display = '';
+        document.getElementById('play-url-source').value = currentSettings.sourceUrl || '';
+        document.getElementById('play-url-title').value = currentSettings.buttonTitle || '';
+      } else {
+        playUrlSection.style.display = 'none';
+      }
+
+      // Appearance section: shared by all trigger-style actions.
+      var TRIGGER_ACTIONS = [
+        'com.vsd.craft.heos.playurl',
+        'com.vsd.craft.heos.preset',
+        'com.vsd.craft.heos.grouppreset',
+        'com.vsd.craft.heos.inputselect',
+        'com.vsd.craft.heos.profileswitch'
+      ];
+      var appearanceSection = document.getElementById('appearance-section');
+      if (TRIGGER_ACTIONS.indexOf(currentAction) !== -1) {
+        appearanceSection.style.display = '';
+        document.getElementById('appearance-color').value = currentSettings.iconColor || '#4a90e2';
+        document.getElementById('appearance-glyph').value = currentSettings.iconGlyph || 'play';
+      } else {
+        appearanceSection.style.display = 'none';
+      }
+
       // Show profiles section when profiles exist or when on profile-switch action
       var profiles = globalSettings.profiles || [];
       var profilesSection = document.getElementById('profiles-section');
@@ -663,6 +748,45 @@
       if (num > 99) num = 99;
       this.value = num;
       saveSettings({ presetNumber: num });
+      requestButtonRefresh();
+    });
+
+    // VSD Craft doesn't reliably echo per-action didReceiveSettings to the
+    // plugin on PI writes, nor route sendToPlugin — so we piggyback on the
+    // known-good globalSettings channel. After each save, bump a transient
+    // `_buttonRefresh` key carrying { action, context, settings, at }. Each
+    // action's onGlobalSettingsChange picks it up and re-renders.
+    function requestButtonRefresh() {
+      if (!currentContext || !currentAction) return;
+      saveGlobalSettings({
+        _buttonRefresh: {
+          action: currentAction,
+          context: currentContext,
+          settings: currentSettings,
+          at: Date.now()
+        }
+      });
+    }
+
+    // `input` (not `change`) so the button updates as the user types.
+    document.getElementById('play-url-source').addEventListener('input', function () {
+      saveSettings({ sourceUrl: this.value.trim() });
+      requestButtonRefresh();
+    });
+
+    document.getElementById('play-url-title').addEventListener('input', function () {
+      saveSettings({ buttonTitle: this.value.trim() });
+      requestButtonRefresh();
+    });
+
+    document.getElementById('appearance-color').addEventListener('input', function () {
+      saveSettings({ iconColor: this.value });
+      requestButtonRefresh();
+    });
+
+    document.getElementById('appearance-glyph').addEventListener('change', function () {
+      saveSettings({ iconGlyph: this.value });
+      requestButtonRefresh();
     });
 
     // --- Group Preset ---
@@ -730,8 +854,9 @@
       saveSettings({ groupPids: pids, leaderPid: leaderPid });
     }
 
-    document.getElementById('group-label').addEventListener('change', function () {
+    document.getElementById('group-label').addEventListener('input', function () {
       saveSettings({ groupLabel: this.value.trim() });
+      requestButtonRefresh();
     });
 
     document.getElementById('group-leader-select').addEventListener('change', function () {
@@ -814,8 +939,9 @@
       saveSettings({ profileId: this.value });
     });
 
-    document.getElementById('profile-switch-label').addEventListener('change', function () {
+    document.getElementById('profile-switch-label').addEventListener('input', function () {
       saveSettings({ profileLabel: this.value.trim() });
+      requestButtonRefresh();
     });
 
     // --- Input Source ---
@@ -857,8 +983,9 @@
       saveSettings({ inputName: this.value });
     });
 
-    document.getElementById('input-label').addEventListener('change', function () {
+    document.getElementById('input-label').addEventListener('input', function () {
       saveSettings({ inputLabel: this.value.trim() });
+      requestButtonRefresh();
     });
 
     // --- Group Volume ---

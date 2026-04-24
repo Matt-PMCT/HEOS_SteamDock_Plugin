@@ -103,6 +103,13 @@ class HeosClient {
     this.groupState = {};
     this.musicSources = [];
 
+    // Metadata override for play_stream URLs. HEOS reports generic
+    // "URL Stream" for song/artist when playing an arbitrary URL; the play-url
+    // action populates this with real podcast titles so play-pause can show
+    // them. Stays set and dormant when HEOS reports real metadata (Spotify,
+    // etc.) — play-pause only consults it on the generic case.
+    this.streamMetadataOverride = null;
+
     // Init sequence guard and debounce timers
     this._initRunning = false;
     this._pendingInitPid = undefined; // queued re-run if init called while running

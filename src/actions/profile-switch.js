@@ -1,3 +1,14 @@
+const { buildButtonSvg } = require('../button-render');
+const { consumeButtonRefresh } = require('../button-refresh');
+
+function renderButton(context, settings, vsd) {
+  const label = settings.buttonTitle != null
+    ? String(settings.buttonTitle)
+    : (settings.profileLabel || 'Profile');
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'home'));
+  vsd.setTitle(context, '');
+}
+
 module.exports = {
   actionUUID: 'com.vsd.craft.heos.profileswitch',
 
@@ -11,8 +22,6 @@ module.exports = {
     const profile = profiles.find(p => String(p.id) === String(targetProfileId));
     if (!profile) { vsd.showAlert(message.context); return; }
 
-    // Switch: update heosIp and playerId, which triggers reconnection.
-    // showOk is optimistic -- the actual connection happens asynchronously.
     vsd.setGlobalSettings({
       ...gs,
       activeProfileId: profile.id,
@@ -25,12 +34,14 @@ module.exports = {
   },
 
   onWillAppear(message, { vsd }) {
-    const settings = message.payload.settings || {};
-    vsd.setTitle(message.context, settings.profileLabel || 'Profile');
+    renderButton(message.context, message.payload.settings || {}, vsd);
   },
 
   onDidReceiveSettings(message, { vsd }) {
-    const settings = message.payload.settings || {};
-    vsd.setTitle(message.context, settings.profileLabel || 'Profile');
+    renderButton(message.context, message.payload.settings || {}, vsd);
+  },
+
+  onGlobalSettingsChange({ contexts, vsd }) {
+    consumeButtonRefresh(module.exports.actionUUID, contexts, vsd, renderButton);
   }
 };

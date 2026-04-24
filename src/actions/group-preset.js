@@ -1,3 +1,14 @@
+const { buildButtonSvg } = require('../button-render');
+const { consumeButtonRefresh } = require('../button-refresh');
+
+function renderButton(context, settings, vsd) {
+  const label = settings.buttonTitle != null
+    ? String(settings.buttonTitle)
+    : (settings.groupLabel || 'Grp');
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'group'));
+  vsd.setTitle(context, '');
+}
+
 module.exports = {
   actionUUID: 'com.vsd.craft.heos.grouppreset',
 
@@ -64,12 +75,14 @@ module.exports = {
   },
 
   onWillAppear(message, { vsd }) {
-    const settings = message.payload.settings || {};
-    vsd.setTitle(message.context, settings.groupLabel || 'Grp');
+    renderButton(message.context, message.payload.settings || {}, vsd);
   },
 
   onDidReceiveSettings(message, { vsd }) {
-    const settings = message.payload.settings || {};
-    vsd.setTitle(message.context, settings.groupLabel || 'Grp');
+    renderButton(message.context, message.payload.settings || {}, vsd);
+  },
+
+  onGlobalSettingsChange({ contexts, vsd }) {
+    consumeButtonRefresh(module.exports.actionUUID, contexts, vsd, renderButton);
   }
 };
