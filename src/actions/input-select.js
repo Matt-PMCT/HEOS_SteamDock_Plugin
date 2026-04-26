@@ -6,7 +6,7 @@ function renderButton(context, settings, vsd) {
   const label = settings.buttonTitle != null
     ? String(settings.buttonTitle)
     : (settings.inputLabel || 'Input');
-  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'input'));
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'input', settings.labelFontSize));
   vsd.setTitle(context, '');
 }
 

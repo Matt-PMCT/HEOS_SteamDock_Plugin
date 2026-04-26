@@ -5,7 +5,7 @@ function renderButton(context, settings, vsd) {
   const presetNumber = parseInt(settings.presetNumber, 10) || 1;
   const fallback = 'P' + presetNumber;
   const label = settings.buttonTitle != null ? String(settings.buttonTitle) : fallback;
-  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'star'));
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'star', settings.labelFontSize));
   vsd.setTitle(context, '');
 }
 

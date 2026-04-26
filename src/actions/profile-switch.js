@@ -5,7 +5,7 @@ function renderButton(context, settings, vsd) {
   const label = settings.buttonTitle != null
     ? String(settings.buttonTitle)
     : (settings.profileLabel || 'Profile');
-  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'home'));
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'home', settings.labelFontSize));
   vsd.setTitle(context, '');
 }
 

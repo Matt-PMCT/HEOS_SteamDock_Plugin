@@ -39,29 +39,45 @@ function escapeXml(str) {
     .replace(/'/g, '&apos;');
 }
 
+const DEFAULT_FONT_SIZE = 13;
+
+function clampFontSize(n) {
+  const v = parseInt(n, 10);
+  if (!Number.isFinite(v)) return DEFAULT_FONT_SIZE;
+  if (v < 8) return 8;
+  if (v > 20) return 20;
+  return v;
+}
+
 // Build an SVG that shows the state icon centered, with a black translucent
 // band along the bottom and the title text (up to 2 lines) on top of the
 // band. Used only for the no-album-art path — album art uses the raw data
 // URI to stay under the setImage size ceiling.
-function buildStateIconSvg(isPlaying, titleLines) {
+function buildStateIconSvg(isPlaying, titleLines, fontSize) {
   const b64 = isPlaying ? _pauseIconB64 : _playIconB64;
   if (!b64) return null;
   const iconHref = `data:image/png;base64,${b64}`;
+  const fs = clampFontSize(fontSize);
   let svg = '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="72" height="72">' +
     `<image href="${iconHref}" xlink:href="${iconHref}" width="72" height="72"/>`;
 
   if (titleLines && titleLines.length > 0) {
-    // At font-size 13 the cap-height is ~9px. Single-line band = 20px,
-    // two-line band = 34px (16px line height).
+    // Band scales with font size. At fontSize=13: single 20px, two-line 34px
+    // (matching the prior hard-coded values exactly).
     const lines = titleLines.slice(0, MAX_LINES);
-    const bandHeight = lines.length === 1 ? 20 : 34;
+    const bandHeight = lines.length === 1
+      ? Math.round(fs * 1.55)
+      : Math.round(fs * 2.62);
     const bandY = 72 - bandHeight;
     svg += `<rect y="${bandY}" width="72" height="${bandHeight}" fill="rgba(0,0,0,0.75)"/>`;
     if (lines.length === 1) {
-      svg += `<text x="36" y="66" font-size="13" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[0])}</text>`;
+      const ty = bandY + Math.round(bandHeight * 0.7);
+      svg += `<text x="36" y="${ty}" font-size="${fs}" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[0])}</text>`;
     } else {
-      svg += `<text x="36" y="54" font-size="13" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[0])}</text>` +
-        `<text x="36" y="68" font-size="13" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[1])}</text>`;
+      const ty1 = bandY + Math.round(bandHeight * 0.47);
+      const ty2 = bandY + Math.round(bandHeight * 0.88);
+      svg += `<text x="36" y="${ty1}" font-size="${fs}" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[0])}</text>` +
+        `<text x="36" y="${ty2}" font-size="${fs}" fill="white" text-anchor="middle" font-family="sans-serif">${escapeXml(lines[1])}</text>`;
     }
   }
 
@@ -152,6 +168,11 @@ function formatTitleLines(media, isPlaying, override) {
   return [isPlaying ? 'Pause' : 'Play'];
 }
 
+// Per-context settings cache. play-pause's renderer is invoked in many places
+// that don't carry the per-action settings (HEOS events, global-settings
+// refresh), so we stash the latest settings here keyed by context.
+const _settingsByContext = new Map();
+
 function updateMediaDisplay(contexts, heosClient, vsd) {
   const media = heosClient.playerState.media;
   const isPlaying = heosClient.playerState.playState === 'play';
@@ -175,6 +196,7 @@ function updateMediaDisplay(contexts, heosClient, vsd) {
     : { media: null, showArt, isPlaying, rendered_lines: titleLines });
 
   for (const ctx of contexts) {
+    const fontSize = (_settingsByContext.get(ctx) || {}).labelFontSize;
     if (showArt && media && media.image_url) {
       // Album art path: raw data URI (title overlaid natively by VSD Craft
       // — it accepts \n for multi-line). SVG-wrapping the 100+ KB image
@@ -184,15 +206,15 @@ function updateMediaDisplay(contexts, heosClient, vsd) {
           vsd.setImage(ctx, uri);
           vsd.setTitle(ctx, titleJoined);
         } else {
-          vsd.setImage(ctx, buildStateIconSvg(isPlaying, titleLines));
+          vsd.setImage(ctx, buildStateIconSvg(isPlaying, titleLines, fontSize));
           vsd.setTitle(ctx, '');
         }
       }).catch(() => {
-        vsd.setImage(ctx, buildStateIconSvg(isPlaying, titleLines));
+        vsd.setImage(ctx, buildStateIconSvg(isPlaying, titleLines, fontSize));
         vsd.setTitle(ctx, '');
       });
     } else {
-      const svg = buildStateIconSvg(isPlaying, titleLines);
+      const svg = buildStateIconSvg(isPlaying, titleLines, fontSize);
       if (svg) {
         vsd.setImage(ctx, svg);
         vsd.setTitle(ctx, '');
@@ -225,10 +247,27 @@ module.exports = {
   onWillAppear(message, { heosClient, vsd }) {
     const state = heosClient.playerState.playState === 'play' ? 1 : 0;
     vsd.setState(message.context, state);
+    _settingsByContext.set(message.context, message.payload.settings || {});
+    updateMediaDisplay([message.context], heosClient, vsd);
+  },
+
+  onWillDisappear(message) {
+    _settingsByContext.delete(message.context);
+  },
+
+  onDidReceiveSettings(message, { heosClient, vsd }) {
+    _settingsByContext.set(message.context, message.payload.settings || {});
     updateMediaDisplay([message.context], heosClient, vsd);
   },
 
   onGlobalSettingsChange({ contexts, heosClient, vsd }) {
+    // The PI piggybacks per-action setting updates on globalSettings via the
+    // shared `_buttonRefresh` channel (see button-refresh.js). Pick up our
+    // own action's payload and refresh the cached settings before re-rendering.
+    const refresh = vsd.getGlobalSettings && vsd.getGlobalSettings()._buttonRefresh;
+    if (refresh && refresh.action === module.exports.actionUUID && refresh.context && refresh.settings) {
+      _settingsByContext.set(refresh.context, refresh.settings);
+    }
     updateMediaDisplay(contexts, heosClient, vsd);
   },
 

@@ -4,8 +4,8 @@ const { consumeButtonRefresh } = require('../button-refresh');
 function renderButton(context, settings, vsd) {
   const label = settings.buttonTitle != null
     ? String(settings.buttonTitle)
-    : (settings.groupLabel || 'Grp');
-  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'group'));
+    : 'Grp';
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph || 'group', settings.labelFontSize));
   vsd.setTitle(context, '');
 }
 

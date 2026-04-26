@@ -1,6 +1,6 @@
 {
   "Name": "HEOS Control",
-  "Version": "1.1.1",
+  "Version": "1.2.0",
   "Author": "Matt Emerson",
   "Description": "Control Denon HEOS speakers from your StreamDock. Play, pause, skip tracks, adjust volume with knobs, mute, and launch favorite presets.",
   "Icon": "images/plugin-icon.png",
@@ -41,13 +41,13 @@
           "Image": "images/actions/play.png",
           "TitleAlignment": "bottom",
           "FontSize": "13",
-          "Title": "Play"
+          "Title": ""
         },
         {
           "Image": "images/actions/pause.png",
           "TitleAlignment": "bottom",
           "FontSize": "13",
-          "Title": "Pause"
+          "Title": ""
         }
       ]
     },
@@ -143,7 +143,7 @@
           "Image": "images/actions/preset.png",
           "TitleAlignment": "bottom",
           "FontSize": "13",
-          "Title": "Preset"
+          "Title": ""
         }
       ]
     },
@@ -158,7 +158,6 @@
       "Settings": {
         "groupPids": [],
         "leaderPid": null,
-        "groupLabel": "",
         "iconColor": "#4a90e2",
         "iconGlyph": "group"
       },
@@ -167,7 +166,7 @@
           "Image": "images/actions/group-preset.png",
           "TitleAlignment": "bottom",
           "FontSize": "13",
-          "Title": "Group"
+          "Title": ""
         }
       ]
     },
@@ -262,7 +261,7 @@
           "Image": "images/actions/input-select.png",
           "TitleAlignment": "bottom",
           "FontSize": "13",
-          "Title": "Input"
+          "Title": ""
         }
       ]
     },
@@ -285,7 +284,7 @@
           "Image": "images/actions/profile-switch.png",
           "TitleAlignment": "bottom",
           "FontSize": "13",
-          "Title": "Profile"
+          "Title": ""
         }
       ]
     },
@@ -308,7 +307,28 @@
           "Image": "images/actions/play-url.png",
           "TitleAlignment": "bottom",
           "FontSize": "13",
-          "Title": "On Demand"
+          "Title": ""
+        }
+      ]
+    },
+    {
+      "UUID": "com.vsd.craft.heos.volumedisplay",
+      "Name": "Volume Display",
+      "Icon": "images/actions/volume.png",
+      "Tooltip": "Live volume readout; press to toggle mute. Pair with the Volume knob.",
+      "PropertyInspectorPath": "property-inspector/index.html",
+      "SupportedInMultiActions": false,
+      "Controllers": ["Keypad"],
+      "Settings": {
+        "iconColor": "#4a90e2",
+        "labelFontSize": 36
+      },
+      "States": [
+        {
+          "Image": "images/actions/volume.png",
+          "TitleAlignment": "bottom",
+          "FontSize": "13",
+          "Title": ""
         }
       ]
     }

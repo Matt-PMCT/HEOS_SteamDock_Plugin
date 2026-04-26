@@ -157,6 +157,38 @@
         <input type="checkbox" id="show-album-art" checked />
         <label for="show-album-art">Show album art on button</label>
       </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Label size</div>
+        <select class="sdpi-item-value" id="playpause-fontsize">
+          <option value="10">Small (10)</option>
+          <option value="13" selected>Default (13)</option>
+          <option value="15">Large (15)</option>
+          <option value="17">X-Large (17)</option>
+        </select>
+      </div>
+      <div class="sdpi-item-hint">Font size for the song / artist text shown when album art is hidden or unavailable.</div>
+    </div>
+  </div>
+
+  <!-- Section 2.5: Volume Display settings (ONLY for volumedisplay action) -->
+  <div id="volumedisplay-section" style="display:none;">
+    <div class="sdpi-heading">Volume Display Settings</div>
+    <div class="sdpi-wrapper">
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Tile color</div>
+        <input class="sdpi-item-value" type="color" id="volumedisplay-color"
+               value="#4a90e2" style="padding:0;height:28px;" />
+      </div>
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Number size</div>
+        <select class="sdpi-item-value" id="volumedisplay-fontsize">
+          <option value="28">Small (28)</option>
+          <option value="36" selected>Default (36)</option>
+          <option value="44">Large (44)</option>
+          <option value="52">X-Large (52)</option>
+        </select>
+      </div>
+      <div class="sdpi-item-hint">Press the button to toggle mute. The number reflects the speaker's current volume.</div>
     </div>
   </div>
 
@@ -289,7 +321,18 @@
           <option value="heart">Heart</option>
         </select>
       </div>
-      <div class="sdpi-item-hint">Tip: clear the label field above to drop the title band and use the full tile for color + icon.</div>
+
+      <div class="sdpi-item">
+        <div class="sdpi-item-label">Label size</div>
+        <select class="sdpi-item-value" id="appearance-fontsize">
+          <option value="10">Small (10)</option>
+          <option value="12" selected>Default (12)</option>
+          <option value="14">Large (14)</option>
+          <option value="16">X-Large (16)</option>
+          <option value="18">XX-Large (18)</option>
+        </select>
+      </div>
+      <div class="sdpi-item-hint">Tip: clear the label field above to drop the title band and use the full tile for color + icon. Larger sizes grow the label band proportionally.</div>
     </div>
   </div>
 
@@ -516,7 +559,7 @@
         case 'com.vsd.craft.heos.preset':
           return 'P' + (parseInt(settings.presetNumber, 10) || 1);
         case 'com.vsd.craft.heos.grouppreset':
-          return settings.groupLabel || 'Grp';
+          return 'Grp';
         case 'com.vsd.craft.heos.inputselect':
           return settings.inputLabel || 'Input';
         case 'com.vsd.craft.heos.profileswitch':
@@ -536,8 +579,20 @@
         // didReceiveSettings on PI writes, so per-action settings would
         // not toggle live).
         document.getElementById('show-album-art').checked = globalSettings.showAlbumArt !== false;
+        document.getElementById('playpause-fontsize').value =
+          String(parseInt(currentSettings.labelFontSize, 10) || 13);
       } else {
         playpauseSection.style.display = 'none';
+      }
+
+      var volumeDisplaySection = document.getElementById('volumedisplay-section');
+      if (currentAction === 'com.vsd.craft.heos.volumedisplay') {
+        volumeDisplaySection.style.display = '';
+        document.getElementById('volumedisplay-color').value = currentSettings.iconColor || '#4a90e2';
+        document.getElementById('volumedisplay-fontsize').value =
+          String(parseInt(currentSettings.labelFontSize, 10) || 36);
+      } else {
+        volumeDisplaySection.style.display = 'none';
       }
 
       var presetSection = document.getElementById('preset-section');
@@ -601,6 +656,8 @@
         appearanceSection.style.display = '';
         document.getElementById('appearance-color').value = currentSettings.iconColor || '#4a90e2';
         document.getElementById('appearance-glyph').value = currentSettings.iconGlyph || 'play';
+        document.getElementById('appearance-fontsize').value =
+          String(parseInt(currentSettings.labelFontSize, 10) || 12);
         // Label field: show the current override (if any), with placeholder
         // reflecting the auto-generated default for this action.
         var labelInput = document.getElementById('appearance-label');
@@ -792,6 +849,29 @@
       requestButtonRefresh();
     });
 
+    document.getElementById('appearance-fontsize').addEventListener('change', function () {
+      var fs = parseInt(this.value, 10);
+      saveSettings({ labelFontSize: Number.isFinite(fs) ? fs : null });
+      requestButtonRefresh();
+    });
+
+    document.getElementById('playpause-fontsize').addEventListener('change', function () {
+      var fs = parseInt(this.value, 10);
+      saveSettings({ labelFontSize: Number.isFinite(fs) ? fs : null });
+      requestButtonRefresh();
+    });
+
+    document.getElementById('volumedisplay-color').addEventListener('input', function () {
+      saveSettings({ iconColor: this.value });
+      requestButtonRefresh();
+    });
+
+    document.getElementById('volumedisplay-fontsize').addEventListener('change', function () {
+      var fs = parseInt(this.value, 10);
+      saveSettings({ labelFontSize: Number.isFinite(fs) ? fs : null });
+      requestButtonRefresh();
+    });
+
     // --- Group Preset ---
 
     function populateGroupPresetPlayers() {
@@ -855,6 +935,7 @@
         document.getElementById('group-leader-select').value = '';
       }
       saveSettings({ groupPids: pids, leaderPid: leaderPid });
+      requestButtonRefresh();
     }
 
     document.getElementById('group-leader-select').addEventListener('change', function () {
@@ -867,6 +948,7 @@
         if (cb) cb.checked = true;
       }
       saveSettings({ leaderPid: leaderPid, groupPids: pids });
+      requestButtonRefresh();
     });
 
     // --- Profile Management ---

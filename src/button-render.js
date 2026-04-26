@@ -82,20 +82,36 @@ function escapeXml(s) {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
+const DEFAULT_FONT_SIZE = 12;
+
+function sanitizeFontSize(n) {
+  const v = parseInt(n, 10);
+  if (!Number.isFinite(v)) return DEFAULT_FONT_SIZE;
+  if (v < 8) return 8;
+  if (v > 22) return 22;
+  return v;
+}
+
 // Build a 72×72 SVG tile data URI suitable for vsd.setImage().
 // - color: "#RRGGBB" or "#RGB"; falls back to default on anything else.
 // - label: shown in a bottom black band; pass '' to drop the band entirely.
 // - glyphKey: one of GLYPHS; falls back to 'play'.
-function buildButtonSvg(color, label, glyphKey) {
+// - fontSize: label font size in px; band height scales 1.5× to keep the
+//   text vertically centered in the bar.
+function buildButtonSvg(color, label, glyphKey, fontSize) {
   const bg = sanitizeColor(color);
   const title = escapeXml((label == null ? '' : String(label)).trim());
   const glyph = GLYPHS[sanitizeGlyph(glyphKey)];
+  const fs = sanitizeFontSize(fontSize);
   let svg = '<svg xmlns="http://www.w3.org/2000/svg" width="72" height="72">' +
     `<rect width="72" height="72" fill="${bg}"/>` +
     glyph;
   if (title) {
-    svg += '<rect y="54" width="72" height="18" fill="rgba(0,0,0,0.55)"/>' +
-      `<text x="36" y="67" font-size="12" fill="white" text-anchor="middle" font-family="sans-serif">${title}</text>`;
+    const bandH = Math.round(fs * 1.5);
+    const bandY = 72 - bandH;
+    const textY = bandY + Math.round(bandH * 0.72);
+    svg += `<rect y="${bandY}" width="72" height="${bandH}" fill="rgba(0,0,0,0.55)"/>` +
+      `<text x="36" y="${textY}" font-size="${fs}" fill="white" text-anchor="middle" font-family="sans-serif">${title}</text>`;
   }
   svg += '</svg>';
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
@@ -103,8 +119,10 @@ function buildButtonSvg(color, label, glyphKey) {
 
 module.exports = {
   DEFAULT_COLOR,
+  DEFAULT_FONT_SIZE,
   GLYPHS,
   sanitizeColor,
   sanitizeGlyph,
+  sanitizeFontSize,
   buildButtonSvg
 };

@@ -17,6 +17,7 @@ const groupVolume = require('./actions/group-volume');
 const inputSelect = require('./actions/input-select');
 const profileSwitch = require('./actions/profile-switch');
 const playUrl = require('./actions/play-url');
+const volumeDisplay = require('./actions/volume-display');
 const { discoverHeosSpeakers } = require('./ssdp-discovery');
 
 // --- Module-Level State ---
@@ -64,6 +65,7 @@ handlers[groupVolume.actionUUID] = groupVolume;
 handlers[inputSelect.actionUUID] = inputSelect;
 handlers[profileSwitch.actionUUID] = profileSwitch;
 handlers[playUrl.actionUUID] = playUrl;
+handlers[volumeDisplay.actionUUID] = volumeDisplay;
 
 // --- CLI Argument Parsing ---
 

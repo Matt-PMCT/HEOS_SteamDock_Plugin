@@ -76,7 +76,7 @@ function renderButton(context, settings, vsd) {
   // Empty buttonTitle is a deliberate "no label" choice — don't substitute a
   // default. Unset (undefined) falls back to 'On Demand' for first-drop.
   const label = (settings.buttonTitle != null ? String(settings.buttonTitle) : 'On Demand');
-  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph));
+  vsd.setImage(context, buildButtonSvg(settings.iconColor, label, settings.iconGlyph, settings.labelFontSize));
   vsd.setTitle(context, '');
 }
 

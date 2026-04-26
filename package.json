@@ -1,6 +1,6 @@
 {
   "name": "heos-streamdock-plugin",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "private": true,
   "scripts": {
     "build": "ncc build src/index.js -o com.vsd.craft.heos.sdPlugin/plugin",
