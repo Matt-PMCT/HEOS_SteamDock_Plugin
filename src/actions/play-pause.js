@@ -173,6 +173,39 @@ function formatTitleLines(media, isPlaying, override) {
 // refresh), so we stash the latest settings here keyed by context.
 const _settingsByContext = new Map();
 
+// Per-context render throttle. updateMediaDisplay can dispatch setImage with
+// a large album-art payload (≥100 KB base64). During event bursts (e.g. a
+// group composition change firing many state/now-playing events), unthrottled
+// renders flood the WebSocket queue and stall VSD Craft. 200ms trailing per
+// context keeps the WS quiet without hurting perceived responsiveness.
+const RENDER_THROTTLE_MS = 200;
+const _renderState = new Map(); // ctx -> { lastAt, timer }
+
+function scheduleMediaDisplay(contexts, heosClient, vsd) {
+  const now = Date.now();
+  for (const ctx of contexts) {
+    let entry = _renderState.get(ctx);
+    if (!entry) {
+      entry = { lastAt: 0, timer: null };
+      _renderState.set(ctx, entry);
+    }
+    const elapsed = now - entry.lastAt;
+    if (elapsed >= RENDER_THROTTLE_MS) {
+      if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+      entry.lastAt = now;
+      updateMediaDisplay([ctx], heosClient, vsd);
+    } else if (!entry.timer) {
+      entry.timer = setTimeout(() => {
+        entry.timer = null;
+        entry.lastAt = Date.now();
+        updateMediaDisplay([ctx], heosClient, vsd);
+      }, RENDER_THROTTLE_MS - elapsed);
+    }
+    // else: a trailing render is already queued — it will pick up the latest
+    // playerState at fire time, so no extra work needed.
+  }
+}
+
 function updateMediaDisplay(contexts, heosClient, vsd) {
   const media = heosClient.playerState.media;
   const isPlaying = heosClient.playerState.playState === 'play';
@@ -253,6 +286,9 @@ module.exports = {
 
   onWillDisappear(message) {
     _settingsByContext.delete(message.context);
+    const r = _renderState.get(message.context);
+    if (r && r.timer) clearTimeout(r.timer);
+    _renderState.delete(message.context);
   },
 
   onDidReceiveSettings(message, { heosClient, vsd }) {
@@ -268,7 +304,7 @@ module.exports = {
     if (refresh && refresh.action === module.exports.actionUUID && refresh.context && refresh.settings) {
       _settingsByContext.set(refresh.context, refresh.settings);
     }
-    updateMediaDisplay(contexts, heosClient, vsd);
+    scheduleMediaDisplay(contexts, heosClient, vsd);
   },
 
   onHeosEvent(eventName, params, { contexts, heosClient, vsd }) {
@@ -277,8 +313,9 @@ module.exports = {
       for (const ctx of contexts) {
         vsd.setState(ctx, state);
       }
-      // State change flips the icon + action label — re-render every key.
-      updateMediaDisplay(contexts, heosClient, vsd);
+      // State change flips the icon + action label — re-render through the
+      // per-context throttle to absorb event bursts.
+      scheduleMediaDisplay(contexts, heosClient, vsd);
     }
     if (eventName === 'event/player_playback_error') {
       for (const ctx of contexts) {
@@ -287,7 +324,7 @@ module.exports = {
       }
     }
     if (eventName === 'event/_media_updated') {
-      updateMediaDisplay(contexts, heosClient, vsd);
+      scheduleMediaDisplay(contexts, heosClient, vsd);
     }
   }
 };

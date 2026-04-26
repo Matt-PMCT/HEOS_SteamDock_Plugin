@@ -292,6 +292,10 @@ class HeosClient {
       clearTimeout(this._sourcesChangedTimer);
       this._sourcesChangedTimer = null;
     }
+    if (this._resyncTimer) {
+      clearTimeout(this._resyncTimer);
+      this._resyncTimer = null;
+    }
     if (this._retryEntry) {
       this._retryEntry.reject(new Error('Disconnected'));
       this._retryEntry = null;
@@ -350,6 +354,7 @@ class HeosClient {
     if (this._groupsChangedTimer) { clearTimeout(this._groupsChangedTimer); this._groupsChangedTimer = null; }
     if (this._userChangedTimer) { clearTimeout(this._userChangedTimer); this._userChangedTimer = null; }
     if (this._sourcesChangedTimer) { clearTimeout(this._sourcesChangedTimer); this._sourcesChangedTimer = null; }
+    if (this._resyncTimer) { clearTimeout(this._resyncTimer); this._resyncTimer = null; }
     if (this.socket) {
       this.socket.removeAllListeners(); // Prevent close handler double-reconnecting
       this.socket.destroy();
@@ -774,10 +779,25 @@ class HeosClient {
         this.playerState.playState = params.state;
         break;
 
-      case 'event/player_volume_changed':
-        this.playerState.volume = parseInt(params.level, 10);
-        this.playerState.mute = params.mute === 'on';
+      case 'event/player_volume_changed': {
+        // HEOS sometimes sends partial events during group transitions
+        // (e.g. just `level` or just `mute`). Don't blindly overwrite state
+        // with NaN or false — only apply fields that are actually present
+        // and valid. Otherwise a stray event could blank the volume to 0
+        // or clear an active mute.
+        if (params.level !== undefined) {
+          const lvl = parseInt(params.level, 10);
+          if (Number.isFinite(lvl) && lvl >= 0 && lvl <= 100) {
+            this.playerState.volume = lvl;
+          } else {
+            logger.log('[HEOS-Client] Ignoring volume_changed with invalid level:', params.level);
+          }
+        }
+        if (params.mute !== undefined) {
+          this.playerState.mute = params.mute === 'on';
+        }
         break;
+      }
 
       case 'event/player_now_playing_changed':
         this.enqueue(`heos://player/get_now_playing_media?pid=${this.playerId}`)
@@ -794,6 +814,10 @@ class HeosClient {
           this.enqueue('heos://player/get_players')
             .then(resp => { this.players = resp.payload || []; })
             .catch(() => {});
+          // After a player-set change our active player may have new volume /
+          // mute / state that change events didn't fully convey. Re-poll so
+          // the local cache (and every button reading from it) is correct.
+          this._resyncActivePlayer();
         }, 500);
         break;
 
@@ -810,6 +834,11 @@ class HeosClient {
               }
             })
             .catch(() => {});
+          // Group composition changes can quietly reset the active player's
+          // volume on the speaker (HEOS quirk) without firing a complete
+          // player_volume_changed. Re-poll to guarantee the volume display
+          // matches reality.
+          this._resyncActivePlayer();
         }, 500);
         break;
 
@@ -817,7 +846,12 @@ class HeosClient {
         const gid = params.gid ? parseInt(params.gid, 10) : null;
         if (gid !== null) {
           if (!this.groupState[gid]) this.groupState[gid] = { volume: 0, mute: false };
-          this.groupState[gid].volume = parseInt(params.level, 10);
+          if (params.level !== undefined) {
+            const lvl = parseInt(params.level, 10);
+            if (Number.isFinite(lvl) && lvl >= 0 && lvl <= 100) {
+              this.groupState[gid].volume = lvl;
+            }
+          }
           if (params.mute !== undefined) this.groupState[gid].mute = params.mute === 'on';
         }
         break;
@@ -894,6 +928,53 @@ class HeosClient {
   }
 
   // --- Internal Helpers ---
+
+  // After events that imply our cached state may have drifted (group changes,
+  // players_changed), re-poll volume + mute for the active player and synthesize
+  // a player_volume_changed event so all listening actions update their display.
+  // Errors are swallowed — the next real event will resync if this fails.
+  _resyncActivePlayer() {
+    if (this.playerId == null) return;
+    if (this._resyncTimer) clearTimeout(this._resyncTimer);
+    // Coalesce bursts of changes into one resync.
+    this._resyncTimer = setTimeout(() => {
+      this._resyncTimer = null;
+      const pid = this.playerId;
+      Promise.all([
+        this.enqueue(`heos://player/get_volume?pid=${pid}`).catch(() => null),
+        this.enqueue(`heos://player/get_mute?pid=${pid}`).catch(() => null)
+      ]).then(([volResp, muteResp]) => {
+        let changed = false;
+        if (volResp) {
+          const lvl = parseInt(parseHeosMessage(volResp.heos.message).level, 10);
+          if (Number.isFinite(lvl) && lvl >= 0 && lvl <= 100 && lvl !== this.playerState.volume) {
+            this.playerState.volume = lvl;
+            changed = true;
+          }
+        }
+        if (muteResp) {
+          const m = parseHeosMessage(muteResp.heos.message).state === 'on';
+          if (m !== this.playerState.mute) {
+            this.playerState.mute = m;
+            changed = true;
+          }
+        }
+        if (changed && typeof this.eventCallback === 'function') {
+          // Fire a synthetic event so volume/mute/volume-display buttons redraw.
+          try {
+            this.eventCallback({
+              heos: {
+                command: 'event/player_volume_changed',
+                message: `pid=${pid}&level=${this.playerState.volume}&mute=${this.playerState.mute ? 'on' : 'off'}`
+              }
+            });
+          } catch (e) {
+            logger.error('[HEOS-Client] _resyncActivePlayer eventCallback threw:', e && e.message);
+          }
+        }
+      });
+    }, 800); // run after the players_changed/groups_changed re-pull (which is at 500ms)
+  }
 
   rejectPending(reason) {
     if (this.pending) {
