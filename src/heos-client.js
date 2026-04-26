@@ -64,6 +64,13 @@ const ConnectionState = {
   RECONNECTING: 'reconnecting'
 };
 
+// After this many failed reconnect attempts (≈ 1+2+4+8+16+30+30+30+30+30+30+30
+// ≈ 4 minutes with the exponential backoff capping at 30s), give up the
+// auto-loop. Without a cap, a wrong/unreachable IP keeps the plugin in a
+// permanent reconnect cycle even after the user gives up. Manual reconnect
+// from the PI (Connect button or new IP) resets the counter.
+const MAX_RECONNECT_ATTEMPTS = 12;
+
 // --- HEOS Client ---
 
 class HeosClient {
@@ -376,6 +383,22 @@ class HeosClient {
     if (!this.ip) return;              // no IP configured
     if (this.state === ConnectionState.CONNECTED) return; // already connected
 
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      logger.error(`[HEOS-Client] Giving up after ${this.reconnectAttempts} failed reconnection attempts. Check IP in Property Inspector and click Connect to retry.`);
+      this._setState(ConnectionState.DISCONNECTED);
+      // Surface to the PI so the user sees a clear error rather than a stuck
+      // "Reconnecting..." spinner. PI's Connect button resets the counter
+      // (handled in index.js's didReceiveGlobalSettings path).
+      if (typeof this.onInitError === 'function') {
+        try {
+          this.onInitError(`Could not reach speaker at ${this.ip} after ${this.reconnectAttempts} attempts. Check the IP and click Connect.`);
+        } catch (e) {
+          logger.error('[HEOS-Client] onInitError threw:', e && e.stack || e);
+        }
+      }
+      return;
+    }
+
     this._setState(ConnectionState.RECONNECTING);
     this.reconnectAttempts++;
 
@@ -383,7 +406,7 @@ class HeosClient {
       logger.log('[HEOS-Client] 10 failed reconnection attempts. Speaker IP may have changed (DHCP). Check IP in Property Inspector.');
     }
 
-    logger.log(`[HEOS-Client] Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts})`);
+    logger.log(`[HEOS-Client] Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       this.connect(this.ip);
@@ -593,6 +616,18 @@ class HeosClient {
     this._initRunning = true;
     this._pendingInitPid = undefined;
 
+    // Belt-and-suspenders: each enqueued command already has its own 5s
+    // timeout, but if a future change adds an unawaited path or the queue
+    // wedges for any reason, the whole init must not hang indefinitely.
+    let initTimedOut = false;
+    const initTimeout = setTimeout(() => {
+      initTimedOut = true;
+      logger.error('[HEOS-Client] Init sequence exceeded 15s — aborting');
+      // Force the next pending command to reject so the await chain unwinds
+      // into our catch block.
+      this.rejectPending('Init sequence timeout');
+    }, 15000);
+
     try {
       // 1. Unregister for events (defensive reset)
       await this.enqueue('heos://system/register_for_change_events?enable=off');
@@ -652,15 +687,17 @@ class HeosClient {
       }
       if (this.onInitComplete) this.onInitComplete();
     } catch (err) {
-      logger.error('[HEOS-Client] Init sequence failed:', err.message);
+      const reason = initTimedOut ? 'Init sequence timeout (15s)' : err.message;
+      logger.error('[HEOS-Client] Init sequence failed:', reason);
       // Reject init promise so callers know it failed
       if (this._initReject) {
         this._initReject(err);
         this._initResolve = null;
         this._initReject = null;
       }
-      if (this.onInitError) this.onInitError(err.message);
+      if (this.onInitError) this.onInitError(reason);
     } finally {
+      clearTimeout(initTimeout);
       this._initRunning = false;
 
       // Re-run if a new init was requested while we were running

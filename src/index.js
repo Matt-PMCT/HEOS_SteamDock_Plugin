@@ -20,6 +20,23 @@ const playUrl = require('./actions/play-url');
 const volumeDisplay = require('./actions/volume-display');
 const { discoverHeosSpeakers } = require('./ssdp-discovery');
 
+// --- Process-Level Safety Net ---
+// Without these, a single sync throw or rejected promise anywhere in the
+// plugin (action handler, HEOS parser, reconnect logic) terminates the Node
+// process. VSD Craft then sees the plugin die at startup if the configured
+// IP is unreachable, leaving the user unable to reach the PI to fix it.
+// Log-and-keep-running is the right default at the system boundary.
+process.on('uncaughtException', (err) => {
+  try {
+    logger.error('[HEOS-Plugin] uncaughtException:', err && err.stack || err);
+  } catch (_) { /* logger itself failed — nothing safe to do */ }
+});
+process.on('unhandledRejection', (reason) => {
+  try {
+    logger.error('[HEOS-Plugin] unhandledRejection:', reason && reason.stack || reason);
+  } catch (_) { /* same */ }
+});
+
 // --- Module-Level State ---
 
 let pluginUUID = null;
@@ -156,6 +173,18 @@ function getContextsForAction(actionUUID) {
   return contexts;
 }
 
+// Invoke a handler method safely. A buggy or uninitialized action must not
+// be allowed to take down the plugin process — log and continue.
+function safeCall(handler, method, ...args) {
+  if (!handler || typeof handler[method] !== 'function') return;
+  try {
+    handler[method](...args);
+  } catch (e) {
+    const uuid = handler.actionUUID || (handler.actionUUIDs && handler.actionUUIDs[0]) || '<unknown>';
+    logger.error(`[HEOS-Plugin] handler ${uuid}.${method} threw:`, e && e.stack || e);
+  }
+}
+
 // --- HEOS Event Callback ---
 
 function onHeosEvent(msg) {
@@ -166,7 +195,7 @@ function onHeosEvent(msg) {
     if (handler.onHeosEvent) {
       const contexts = getContextsForAction(uuid);
       if (contexts.length > 0) {
-        handler.onHeosEvent(eventName, params, { uuid, contexts, heosClient, vsd });
+        safeCall(handler, 'onHeosEvent', eventName, params, { uuid, contexts, heosClient, vsd });
       }
     }
   }
@@ -207,41 +236,41 @@ function dispatchEvent(message) {
         action,
         settings: (message.payload && message.payload.settings) || {}
       });
-      if (handler && handler.onWillAppear) handler.onWillAppear(message, { heosClient, vsd });
+      safeCall(handler, 'onWillAppear', message, { heosClient, vsd });
       break;
 
     case 'willDisappear':
       contextMap.delete(context);
-      if (handler && handler.onWillDisappear) handler.onWillDisappear(message, { heosClient, vsd });
+      safeCall(handler, 'onWillDisappear', message, { heosClient, vsd });
       break;
 
     case 'keyDown':
       logger.log('[HEOS-Plugin] keyDown', action, 'ctx=' + (context || '').substring(0, 12));
-      if (handler && handler.onKeyDown) handler.onKeyDown(message, { heosClient, vsd });
+      safeCall(handler, 'onKeyDown', message, { heosClient, vsd });
       break;
 
     case 'keyUp':
-      if (handler && handler.onKeyUp) handler.onKeyUp(message, { heosClient, vsd });
+      safeCall(handler, 'onKeyUp', message, { heosClient, vsd });
       break;
 
     case 'dialRotate':
-      if (handler && handler.onDialRotate) handler.onDialRotate(message, { heosClient, vsd });
+      safeCall(handler, 'onDialRotate', message, { heosClient, vsd });
       break;
 
     case 'dialDown':
       logger.log('[HEOS-Plugin] dialDown', action, 'ctx=' + (context || '').substring(0, 12));
-      if (handler && handler.onDialDown) handler.onDialDown(message, { heosClient, vsd });
+      safeCall(handler, 'onDialDown', message, { heosClient, vsd });
       break;
 
     case 'dialUp':
-      if (handler && handler.onDialUp) handler.onDialUp(message, { heosClient, vsd });
+      safeCall(handler, 'onDialUp', message, { heosClient, vsd });
       break;
 
     case 'didReceiveSettings':
       if (contextMap.has(context)) {
         contextMap.get(context).settings = (message.payload && message.payload.settings) || {};
       }
-      if (handler && handler.onDidReceiveSettings) handler.onDidReceiveSettings(message, { heosClient, vsd });
+      safeCall(handler, 'onDidReceiveSettings', message, { heosClient, vsd });
       break;
 
     case 'didReceiveGlobalSettings': {
@@ -283,7 +312,7 @@ function dispatchEvent(message) {
         if (handler.onGlobalSettingsChange) {
           const actionContexts = getContextsForAction(uuid);
           if (actionContexts.length > 0) {
-            handler.onGlobalSettingsChange({
+            safeCall(handler, 'onGlobalSettingsChange', {
               contexts: actionContexts, heosClient, vsd
             });
           }
@@ -324,7 +353,11 @@ function dispatchEvent(message) {
       }
 
       if (ipChanged || (!heosClient.isConnected() && globalSettings.heosIp)) {
-        if (ipChanged) heosClient.reconnectDelay = 1000;
+        // Reset the reconnect-attempt counter for any explicit (PI-driven)
+        // connect — IP change, fresh launch, or user clicking Connect after
+        // the auto-loop gave up. Without this, the cap stays armed forever.
+        heosClient.reconnectDelay = 1000;
+        heosClient.reconnectAttempts = 0;
         heosClient.playerId = newPid;
         heosClient.connect(globalSettings.heosIp);
       } else if (playerIdChanged && heosClient.isConnected()) {
@@ -342,7 +375,7 @@ function dispatchEvent(message) {
       break;
 
     case 'sendToPlugin':
-      if (handler && handler.onSendToPlugin) handler.onSendToPlugin(message, { heosClient, vsd });
+      safeCall(handler, 'onSendToPlugin', message, { heosClient, vsd });
       break;
 
     case 'propertyInspectorDidAppear':
@@ -392,8 +425,11 @@ function connectToVsdCraft(args) {
   });
 
   ws.on('error', (err) => {
+    // Don't exit here — 'close' will fire right after for any real disconnect
+    // and handle teardown. Exiting on transient errors (e.g. a temporary
+    // socket hiccup the ws library is going to recover from) is what locked
+    // the user out before.
     logger.error('[HEOS-Plugin] WebSocket error:', err.message);
-    process.exit(1);
   });
 }
 
@@ -407,26 +443,28 @@ heosClient.onInitComplete = () => {
   // Refresh all button displays after init (player state is now current)
   for (const [ctx, info] of contextMap) {
     const handler = handlers[info.action];
-    if (handler && handler.onWillAppear) {
-      handler.onWillAppear(
-        { context: ctx, action: info.action, payload: { settings: info.settings } },
-        { heosClient, vsd }
-      );
-    }
+    safeCall(handler, 'onWillAppear',
+      { context: ctx, action: info.action, payload: { settings: info.settings } },
+      { heosClient, vsd }
+    );
   }
 };
 heosClient.onInitError = savePIError;
 
 // Connection state listener: alert buttons on disconnect, refresh on reconnect
 heosClient.onStateChange((newState, oldState) => {
-  if (newState === ConnectionState.DISCONNECTED || newState === ConnectionState.RECONNECTING) {
-    for (const [ctx] of contextMap) {
-      vsd.showAlert(ctx);
+  try {
+    if (newState === ConnectionState.DISCONNECTED || newState === ConnectionState.RECONNECTING) {
+      for (const [ctx] of contextMap) {
+        vsd.showAlert(ctx);
+      }
     }
-  }
 
-  // Button refresh happens in onInitComplete (after player state is polled),
-  // not here, to avoid displaying stale state.
+    // Button refresh happens in onInitComplete (after player state is polled),
+    // not here, to avoid displaying stale state.
+  } catch (e) {
+    logger.error('[HEOS-Plugin] onStateChange threw:', e && e.stack || e);
+  }
 });
 
 connectToVsdCraft(args);
