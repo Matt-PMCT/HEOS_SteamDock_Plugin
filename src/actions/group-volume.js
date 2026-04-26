@@ -148,9 +148,14 @@ module.exports = {
         if (state && state.pendingDelta !== 0) continue;
         const ctxGid = state ? state.resolvedGid : this._findGroupForPlayer(heosClient);
         if (eventGid === ctxGid || eventGid === null) {
-          const vol = parseInt(params.level, 10);
-          const gs = heosClient.groupState[eventGid];
-          const muted = params.mute !== undefined ? params.mute === 'on' : (gs ? gs.mute : false);
+          // Read from the authoritative cached state — heos-client.js validates
+          // the event fields and only writes to groupState when level/mute are
+          // actually present, so partial events (common during group transitions)
+          // can't blank the display to NaN/0.
+          const gs = heosClient.groupState[eventGid] || {};
+          const vol = gs.volume;
+          const muted = !!gs.mute;
+          if (vol === undefined || vol === null) continue;
           this._setDisplay(ctx, vol, muted, vsd);
         }
       }

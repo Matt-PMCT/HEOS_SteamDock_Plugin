@@ -432,13 +432,15 @@ class HeosClient {
       this.enqueue('heos://system/heart_beat')
         .then(() => { this._heartbeatFailures = 0; })
         .catch(() => {
-          // A single heartbeat failure can be a transient queue backup (e.g.,
-          // a slow set_volume ahead of us blowing past 5s). Only destroy the
-          // socket after two consecutive failures — that's the half-open signal
-          // we're actually looking for.
+          // Heartbeats can fail transiently when the queue is backed up
+          // behind a slow command (e.g. set_volume during a flurry of dial
+          // ticks). Two failures in a row is still common during a busy
+          // burst — only treat three consecutive misses as a real half-open
+          // socket. With a 30s heartbeat that's ≤90s of misses before we
+          // force-reconnect, well under any practical user complaint.
           this._heartbeatFailures = (this._heartbeatFailures || 0) + 1;
-          if (this._heartbeatFailures >= 2 && this.socket) {
-            logger.error('[HEOS-Client] Heartbeat failed twice — forcing reconnect');
+          if (this._heartbeatFailures >= 3 && this.socket) {
+            logger.error('[HEOS-Client] Heartbeat failed three times — forcing reconnect');
             this.socket.destroy();
           }
         });

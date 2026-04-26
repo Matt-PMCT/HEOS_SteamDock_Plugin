@@ -120,15 +120,18 @@ module.exports = {
   },
 
   onHeosEvent(eventName, params, { contexts, heosClient, vsd }) {
-    if (eventName === 'event/player_volume_changed') {
-      const vol = parseInt(params.level, 10);
-      const muted = params.mute === 'on';
-      for (const ctx of contexts) {
-        // Skip display update if user is actively rotating this knob
-        const state = this._state.get(ctx);
-        if (state && state.pendingDelta !== 0) continue;
-        this._setDisplay(ctx, vol, muted, vsd);
-      }
+    if (eventName !== 'event/player_volume_changed') return;
+    // Read from the authoritative cached state. heos-client.js validates the
+    // event fields and only updates playerState when level/mute are actually
+    // present and valid — so this gives the right value even if the event is
+    // partial (which HEOS sends during group transitions).
+    const vol = heosClient.playerState.volume;
+    const muted = !!heosClient.playerState.mute;
+    for (const ctx of contexts) {
+      // Skip display update if user is actively rotating this knob
+      const state = this._state.get(ctx);
+      if (state && state.pendingDelta !== 0) continue;
+      this._setDisplay(ctx, vol, muted, vsd);
     }
   },
 

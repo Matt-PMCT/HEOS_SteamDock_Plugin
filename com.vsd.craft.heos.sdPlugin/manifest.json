@@ -1,6 +1,6 @@
 {
   "Name": "HEOS Control",
-  "Version": "1.2.2",
+  "Version": "1.2.3",
   "Author": "Matt Emerson",
   "Description": "Control Denon HEOS speakers from your StreamDock. Play, pause, skip tracks, adjust volume with knobs, mute, and launch favorite presets.",
   "Icon": "images/plugin-icon.png",
